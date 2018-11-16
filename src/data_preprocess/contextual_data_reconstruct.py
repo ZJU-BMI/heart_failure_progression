@@ -32,7 +32,7 @@ def main():
                                         read_from_cache=True)
     vital_sign_dict = get_vital_sign(visit_dict, data_path_dict, cache_root, read_from_cache=True)
     event_dict = build_event(data_path_dict, visit_dict, cache_root, read_from_cache=True)
-    lab_test_dict = get_lab_test_info(visit_dict, data_path_dict, lab_test_list_path, cache_root, read_from_cache=True)
+    lab_test_dict = get_lab_test_info(visit_dict, data_path_dict, lab_test_list_path, cache_root, read_from_cache=False)
     egfr_dict = get_egfr(visit_dict, sex_dict, age_dict, lab_test_dict)
 
     save_path = os.path.abspath('..\\..\\resource\\未预处理长期纵向数据.csv')
@@ -121,7 +121,7 @@ def build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False):
             # 标定死亡
             if result == '死亡':
                 diagnosis_dict[patient_id][visit_id]['死亡'] = 1
-            # 标定心功能分级，由于心功能分级标定较为简单，不一定要通过出院诊断才能标记
+            # 标定心功能分级，由于心功能分级标定较为简单，不一定要通过出院诊断才能标记，因此不做主诊断要求
             if diagnosis_desc.__contains__('心功能'):
                 pos = diagnosis_desc.find('心功能')
                 target_length = len('心功能')
@@ -142,6 +142,7 @@ def build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False):
                         sub_string.__contains__('四') or sub_string.__contains__('Ⅳ'):
                     diagnosis_dict[patient_id][visit_id]['心功能4级'] = 1
                 else:
+                    # 单纯写心功能不全的，统一按照二级处理
                     diagnosis_dict[patient_id][visit_id]['心功能2级'] = 1
             elif diagnosis_desc.__contains__('NYHA'):
                 pos = diagnosis_desc.find('NYHA')
@@ -163,6 +164,7 @@ def build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False):
                         sub_string.__contains__('四') or sub_string.__contains__('Ⅳ'):
                     diagnosis_dict[patient_id][visit_id]['心功能4级'] = 1
                 else:
+                    # 单纯写心功能不全的，统一按照二级处理
                     diagnosis_dict[patient_id][visit_id]['心功能2级'] = 1
 
             # 根据出院诊断判断常见合并症是否发生
@@ -209,8 +211,7 @@ def build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False):
             operation_dict[patient_id] = dict()
             for visit_id in visit_dict[patient_id]:
                 operation_dict[patient_id][visit_id] = False
-    candidate_name_list = ['支架', '球囊', 'PCI', '介入', 'PTCA', '冠状动脉旁路移植术', '旁路移植', 'CABG', '冠状动脉搭桥',
-                           '冠脉搭桥', '主动脉搭桥']
+    candidate_name_list = ['支架', '球囊', 'PCI', '介入', 'PTCA', '冠状动脉旁路移植术', '旁路移植', 'CABG', '搭桥']
     operation_path = data_path_dict['operation']
     with open(operation_path, 'r', encoding='gbk', newline='') as file:
         csv_reader = csv.reader(file)
@@ -299,9 +300,7 @@ def get_egfr(visit_dict, sex_dict, age_dict, lab_test_dict):
         for visit_id in visit_dict[patient_id]:
             age = float(age_dict[patient_id][visit_id])
             sex = float(sex_dict[patient_id])
-            scr = re.findall('[-+]?[.]?[\d]+(?:,\d\d\d)*[.]?\d*(?:[eE][-+]?\d+)?',
-                             lab_test_dict[patient_id][visit_id]['肌酐'][1])
-            scr = float(scr[0])
+            scr = lab_test_dict[patient_id][visit_id]['肌酐'][1]
             if age == -1.0 or sex == -1.0 or scr == -1.0:
                 egfr_dict[patient_id][visit_id] = -1
                 continue
@@ -828,10 +827,9 @@ def get_medical_info(visit_dict, data_path_dict, map_path, cache_root, read_from
     drug_map_set = set()
     with open(map_path, 'r', encoding='gbk', newline="") as file:
         csv_reader = csv.reader(file)
-        for line in islice(csv_reader, 1, None):
-            line_length = len(line)
+        for line in csv_reader:
             drug_map_set.add(line[0])
-            for i in range(line_length):
+            for i in range(len(line)):
                 if len(line[i]) >= 2:
                     drug_map_dict[line[i]] = line[0]
 
@@ -1019,12 +1017,12 @@ def get_demographic_info(visit_dict, data_path_dict, cache_root, read_from_cache
 def get_valid_visit(data_path_dict, cache_root, read_from_cache=False):
     """
     条件
-    1.入院时间在2006年以后
-    2.病人06年以后入院的入院次数大于4次
-    3.能够检验中找到能够关联到的项目
-    4.能够查到有效的人口学数据
-    5.能够查到有效的Order数据
-    6.能够找到诊断数据
+    1.入院时间在2006年以后（包含2006年）
+    2.能够检验中找到能够关联到的项目
+    3.能够查到有效的人口学数据
+    4.能够查到有效的Order数据
+    5.能够找到诊断数据
+    6.经过上述所有筛选后，入院的入院次数大于4次
 
     :param data_path_dict:
     :param cache_root:
@@ -1062,25 +1060,6 @@ def get_valid_visit(data_path_dict, cache_root, read_from_cache=False):
                 visit_dict[patient_id] = set()
             visit_dict[patient_id].add(visit_id)
 
-    # 能调查到人口学信息的病人ID
-    patient_master_path = data_path_dict['pat_master_index']
-    demographic_info_available_set = set()
-    with open(patient_master_path, 'r', encoding="gbk", newline="") as file:
-        csv_reader = csv.reader(file)
-        for line in islice(csv_reader, 1, None):
-            patient_id = line[0]
-            sex = line[4]
-            birthday = line[5]
-            if not (sex is None or birthday is None or len(birthday) < 6):
-                demographic_info_available_set.add(patient_id)
-    # 删减掉没有人口学信息的病人
-    demographic_info_unavailable_set = set()
-    for patient_id in visit_dict:
-        if not demographic_info_available_set.__contains__(patient_id):
-            demographic_info_unavailable_set.add(patient_id)
-    for patient_id in demographic_info_unavailable_set:
-        visit_dict.pop(patient_id)
-
     # 删掉没有对应任何检验信息的病人
     lab_test_path = data_path_dict['lab_test_master']
     lab_test_dict = dict()
@@ -1100,6 +1079,25 @@ def get_valid_visit(data_path_dict, cache_root, read_from_cache=False):
     for item in lab_test_invalid_list:
         patient_id, visit_id = item
         visit_dict[patient_id].discard(visit_id)
+
+    # 能调查到人口学信息的病人ID
+    patient_master_path = data_path_dict['pat_master_index']
+    demographic_info_available_set = set()
+    with open(patient_master_path, 'r', encoding="gbk", newline="") as file:
+        csv_reader = csv.reader(file)
+        for line in islice(csv_reader, 1, None):
+            patient_id = line[0]
+            sex = line[4]
+            birthday = line[5]
+            if not (sex is None or birthday is None or len(birthday) < 6):
+                demographic_info_available_set.add(patient_id)
+    # 删减掉没有人口学信息的病人
+    demographic_info_unavailable_set = set()
+    for patient_id in visit_dict:
+        if not demographic_info_available_set.__contains__(patient_id):
+            demographic_info_unavailable_set.add(patient_id)
+    for patient_id in demographic_info_unavailable_set:
+        visit_dict.pop(patient_id)
 
     # 删掉没有Order数据的病人
     order_path = data_path_dict['orders']
@@ -1132,17 +1130,15 @@ def get_valid_visit(data_path_dict, cache_root, read_from_cache=False):
             if not diagnosis_valid_dict.__contains__(patient_id):
                 diagnosis_valid_dict[patient_id] = set()
             diagnosis_valid_dict[patient_id].add(visit_id)
-    diagnosis_invalid_dict = dict()
+    diagnosis_invalid_list = list()
     for patient_id in visit_dict:
         for visit_id in visit_dict[patient_id]:
             if not (diagnosis_valid_dict.__contains__(patient_id) and diagnosis_valid_dict[patient_id].__contains__(
                     visit_id)):
-                if not diagnosis_invalid_dict.__contains__(patient_id):
-                    diagnosis_invalid_dict[patient_id] = set()
-                diagnosis_invalid_dict[patient_id].add(visit_id)
-    for patient_id in diagnosis_invalid_dict:
-        for visit_id in diagnosis_invalid_dict[patient_id]:
-            visit_dict[patient_id].discard(visit_id)
+                diagnosis_invalid_list.append([patient_id, visit_id])
+    for item in diagnosis_invalid_list:
+        patient_id, visit_id = item
+        visit_dict[patient_id].discard(visit_id)
 
     # 删除入院次数小于4次的病人
     eliminate_patient = set()
@@ -1262,7 +1258,7 @@ def get_lab_test_info(visit_dict, data_path_dict, name_list_path, cache_root, re
                     lab_test_dict[patient_id] = dict()
                 if not lab_test_dict[patient_id].__contains__(visit_id):
                     lab_test_dict[patient_id][visit_id] = dict()
-                data_tuple = [report_item_name, result, unit, abnormal]
+                data_tuple = [report_item_name, float(result), unit, abnormal]
                 lab_test_dict[patient_id][visit_id][item] = data_tuple
         return lab_test_dict
 
@@ -1313,11 +1309,12 @@ def get_lab_test_info(visit_dict, data_path_dict, name_list_path, cache_root, re
             else:
                 abnormal = -1
 
-            result_list = re.findall('[-+]?[.]?[\d]+(?:,\d\d\d)*[.]?\d*(?:[eE][-+]?\d+)?', result)
+            result_list = re.findall('[-+]?[\d]+(?:,\d\d\d)*[.]?\d*(?:[eE][-+]?\d+)?', result)
             if len(result_list) > 0:
                 result = result_list[0]
             if len(result_list) == 0 or len(result) == 0:
-                result = '-1'
+                result = -1
+            result = float(result)
             result_dict[test_no][item_no] = [report_item_name, result, unit, abnormal, record_time]
     # 读取Master数据
     master_dict = dict()

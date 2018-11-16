@@ -30,7 +30,7 @@ def read_data(file_path):
 
 def data_impute(data_dict):
     """
-    数值型数据填补中位数，分类数据填补0
+    数值型数据填补中位数，分类数据填补众数
     :param data_dict:
     :return:
     """
@@ -55,7 +55,7 @@ def data_impute(data_dict):
         for visit_id in data_dict[patient]:
             for feature in data_dict[patient][visit_id]:
                 value = data_dict[patient][visit_id][feature]
-                if value != '-1' and len(value) < 10:
+                if value != '-1':
                     feature_dict[feature].append(float(value))
     for feature in feature_dict:
         feature_dict[feature] = sorted(feature_dict[feature])
@@ -64,10 +64,7 @@ def data_impute(data_dict):
     feature_fed_dict = dict()
     for feature in feature_dict:
         median = len(feature_dict[feature]) // 2
-        if median == 0:
-            feature_fed_dict[feature] = 0
-        else:
-            feature_fed_dict[feature] = feature_dict[feature][median]
+        feature_fed_dict[feature] = feature_dict[feature][median]
 
     # 数据填充
     data_processed_dict = dict()
@@ -193,100 +190,6 @@ def feature_pre_process(origin_data, save_path):
         csv.writer(file).writerows(data_to_write)
 
     print('finish')
-
-
-def generate_label(data_dict, save_path):
-    """
-    我们所要关注的是7类指标在1年，2年内是否会发生进展，也就是有14个标签
-    :param data_dict:
-    :param save_path:
-    :return:
-    """
-    # 构建数据模板
-    label_dict = dict()
-    for patient_id in data_dict:
-        label_dict[patient_id] = list()
-        for visit_id in data_dict[patient_id]:
-            visit_id_int = int(visit_id)
-            time_interval = int(data_dict[patient_id][visit_id]['时间差'])
-            event = {'非心源性入院': int(data_dict[patient_id][visit_id]['非心源性入院']),
-                     '心功能1级': int(data_dict[patient_id][visit_id]['心功能1级']),
-                     '心功能2级': int(data_dict[patient_id][visit_id]['心功能2级']),
-                     '心功能3级': int(data_dict[patient_id][visit_id]['心功能3级']),
-                     '心功能4级': int(data_dict[patient_id][visit_id]['心功能4级']),
-                     '再血管化手术': int(data_dict[patient_id][visit_id]['再血管化手术']),
-                     '死亡': int(data_dict[patient_id][visit_id]['死亡'])}
-            one_year_label = {'非心源性入院': 0, '心功能1级': 0, '心功能2级': 0, '心功能3级': 0, '心功能4级': 0,
-                              '再血管化手术': 0, '死亡': 0}
-            two_year_label = {'非心源性入院': 0, '心功能1级': 0, '心功能2级': 0, '心功能3级': 0, '心功能4级': 0,
-                              '再血管化手术': 0, '死亡': 0}
-            label_dict[patient_id].append([visit_id_int, time_interval, event, one_year_label, two_year_label])
-
-    # 按照入院id号对数据排序
-    for patient_id in label_dict:
-        sorted(label_dict[patient_id], key=lambda x: x[0])
-
-    # 对一次入院所对应的标签
-    # 统计一年内的所有入院，然后分别把相对应的事件置一，如果没有一年内入院，则标签和本次入院一样
-    # 同样的道理应用于两年内入院
-    for patient_id in label_dict:
-        for i in range(0, len(label_dict[patient_id])-1):
-            # 一年统计
-            for j in range(i+1, len(label_dict[patient_id])):
-                event = label_dict[patient_id][j][2]
-                time_interval = label_dict[patient_id][j][1] - label_dict[patient_id][i][1]
-                if time_interval > 365:
-                    break
-                for key in event:
-                    if event[key] == 1:
-                        label_dict[patient_id][i][3][key] = 1
-            # 若一个事件都没有发生，则使用i中的事件作为事件
-            no_event_flag = True
-            for key in label_dict[patient_id][i][3]:
-                if label_dict[patient_id][i][3][key] == 1:
-                    no_event_flag = False
-            if no_event_flag:
-                label_dict[patient_id][i][3] = label_dict[patient_id][i][2]
-
-            # 两年统计
-            for j in range(i+1, len(label_dict[patient_id])):
-                event = label_dict[patient_id][j][2]
-                time_interval = label_dict[patient_id][j][1] - label_dict[patient_id][i][1]
-                if time_interval > 730:
-                    break
-                for key in event:
-                    if event[key] == 1:
-                        label_dict[patient_id][i][4][key] = 1
-            # 若一个事件都没有发生，则使用i中的事件作为事件
-            no_event_flag = True
-            for key in label_dict[patient_id][i][4]:
-                if label_dict[patient_id][i][4][key] == 1:
-                    no_event_flag = False
-            if no_event_flag:
-                label_dict[patient_id][i][4] = label_dict[patient_id][i][2]
-
-    data_to_write = list()
-    head = ['patient_id', 'visit_id']
-    for patient_id in label_dict:
-        for key in label_dict[patient_id][0][2]:
-            head.append('一年'+key)
-        for key in label_dict[patient_id][0][2]:
-            head.append('两年'+key)
-        break
-    data_to_write.append(head)
-    for patient_id in label_dict:
-        for item in label_dict[patient_id]:
-            visit_id = item[0]
-            one_year_event = item[3]
-            two_year_event = item[4]
-            row = [patient_id, visit_id]
-            for key in one_year_event:
-                row.append(one_year_event[key])
-            for key in two_year_event:
-                row.append(two_year_event[key])
-            data_to_write.append(row)
-    with open(save_path, 'w', encoding='gbk', newline='') as file:
-        csv.writer(file).writerows(data_to_write)
 
 
 def main():

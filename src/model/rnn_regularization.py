@@ -22,8 +22,7 @@ def regularization_rnn(num_steps, num_hidden, num_feature, x_placeholder, phase_
     weight_initializer = tf.initializers.orthogonal()
     bias_initializer = tf.initializers.zeros()
 
-    rnn_cell = ContextualGRUCell(num_hidden, num_feature, phase_indicator, weight_initializer, bias_initializer,
-                                 zero_state)
+    rnn_cell = ContextualGRUCell(num_hidden, num_feature, phase_indicator, weight_initializer, bias_initializer)
 
     output_list = list()
     x_unstack = tf.unstack(x_placeholder, axis=1)

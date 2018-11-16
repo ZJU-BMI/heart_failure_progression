@@ -15,9 +15,10 @@ def vanilla_attention(num_steps, num_hidden, num_feature, keep_rate):
         attention_weight = tf.get_variable("attention", [num_steps, 1, 1], initializer=tf.initializers.orthogonal())
 
     with tf.name_scope('attention_output'):
-        attention_weight = attention_weight/tf.reduce_sum(attention_weight, axis=0, keep_dims=True)
-        output_list = attention_weight*tf.convert_to_tensor(output_list)
-        output = tf.reduce_mean(output_list, axis=0)
+        attention_weight = attention_weight/tf.reduce_sum(attention_weight)
+        output_list = tf.convert_to_tensor(output_list)
+        output_list = attention_weight*output_list
+        output = tf.reduce_sum(output_list, axis=0)
 
     with tf.variable_scope('output_weight'):
         output_weight = tf.get_variable("output_weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
@@ -25,6 +26,6 @@ def vanilla_attention(num_steps, num_hidden, num_feature, keep_rate):
         unnormalized_prediction = tf.matmul(output, output_weight) + bias
         loss = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
 
-    prediction = tf.sigmoid(unnormalized_prediction)
+        prediction = tf.sigmoid(unnormalized_prediction)
 
     return loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator

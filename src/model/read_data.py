@@ -6,6 +6,14 @@ import random
 
 class DataSource(object):
     def __init__(self, data_folder, data_length, test_fold_num, batch_size, reserve_time=False):
+        """
+        :param data_folder:
+        :param data_length:
+        :param test_fold_num:
+        :param batch_size:
+        :param reserve_time:  入院时间差是原始数据中唯一没有，也不适合做归一化的变量，加入模型可能对模型产生不利影响
+        因此此处可以设定是否要加入时间变量
+        """
         self.__data_folder = data_folder
         self.__test_fold = test_fold_num
         self.__batch_size = batch_size
@@ -51,9 +59,7 @@ class DataSource(object):
         shuffled_train_label = dict()
 
         # 构建随机化序列
-        shuffle_index = list()
-        for i in range(len(self.__raw_train_feature)):
-            shuffle_index.append(i)
+        shuffle_index = [i for i in range(len(self.__raw_train_feature))]
         random.shuffle(shuffle_index)
 
         # 填充关键词
@@ -115,20 +121,18 @@ class DataSource(object):
             for item_2 in time_candidate:
                 event_list.append(item_2+item_1)
         # 读取数据
-        for i in range(5):
-            for key_name in event_list:
-                if not train_label_dict.__contains__(key_name):
-                    train_label_dict[key_name] = list()
-                if not test_label_dict.__contains__(key_name):
-                    test_label_dict[key_name] = list()
-
+        for key_name in event_list:
+            if not train_label_dict.__contains__(key_name):
+                train_label_dict[key_name] = list()
+            if not test_label_dict.__contains__(key_name):
+                test_label_dict[key_name] = list()
+            for i in range(5):
                 label_name = 'length_{}_{}_fold_label_{}.npy'.format(str(data_length), str(i), key_name)
                 label = np.load(os.path.join(data_folder, label_name))
                 if i == self.__test_fold:
                     for item in label:
                         test_label_dict[key_name].append(item)
                     test_label_dict[key_name] = np.array(test_label_dict[key_name])
-                    test_label_dict[key_name] = test_label_dict[key_name][:, np.newaxis]
                     continue
 
                 for item in label:

@@ -10,6 +10,7 @@ def data_filter(feature_data, label_data, data_length):
     # eliminate data with insufficient admission record
     invalid_patient_set = set()
     for patient_id in feature_data:
+        # 如果一个RNN的需要三次作为输入，则符合条件的数据至少要入院四次，不然第三次入院产生的标签是没有意义的
         if len(feature_data[patient_id]) <= data_length:
             invalid_patient_set.add(patient_id)
     for patient_id in invalid_patient_set:
@@ -28,7 +29,7 @@ def data_filter(feature_data, label_data, data_length):
                 data = [feature_data[patient_id][visit_id], label_data[patient_id][visit_id]]
                 medium_data_dict[patient_id].append(data)
 
-    # get truncated feature sequence and last label
+    # get truncated feature sequence and label
     data_dict = dict()
     for patient_id in medium_data_dict:
         feature = list()
@@ -118,7 +119,7 @@ def main(data_length):
     由于本研究的特殊性，数据只做截断不做填充
     例如：设定data_length为5，也就是要求病人有6次入院记录，其中前5次作为序列数据输入RNN，最后一次的Event作为Label
     当一个病人有8次住院记录时，在第六次入院记录时进行数据截断，丢弃第7,8次住院记录。使用前5次入院作为输入
-    第六次的Event作为Label
+    第六次的Event作为Label（已经完整的完成了标记）
     当一个病人只有4次入院记录时，则弃用这一数据。显然，Data_Length拉的越长，数据越少
     :return:
     """
@@ -136,8 +137,6 @@ def main(data_length):
             label_np = np.array(label[key], dtype=np.float64)
             np.save(os.path.join(save_root, 'length_{}_{}_fold_label_{}.npy'.format(str(data_length), str(i), key)),
                     label_np)
-
-    print('')
 
 
 if __name__ == '__main__':

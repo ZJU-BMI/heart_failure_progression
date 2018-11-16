@@ -21,11 +21,13 @@ def get_data(path):
     with open(path, 'r', encoding='gbk', newline='') as file:
         csv_reader = csv.reader(file)
         for line in islice(csv_reader, 2, None):
-            # 若一个数据为心源性入院且标签丢失，编入测试集；反之编入训练（验证）集
+            # 若一个数据为心源性入院（line[15]）且标签丢失（line[10]），编入测试集；
+            # 反之，心源性入院但没有标签丢失的，编入训练（验证）集
             # line[16] 之后是特征， line[5:9]是心功能的四个分级
             # 注意，若之前的数据预处理代码修改导致相应的index意义发生变化，此处要及时修改
             if line[15] == '1' and line[10] == '1':
                 test_feature.append(line[16:])
+                # 用于记录每个test case对应的patient_id 和 visit_id
                 test_patient_dict[test_count] = [line[0], line[1]]
                 test_count += 1
                 continue
@@ -35,17 +37,17 @@ def get_data(path):
                 train_set.append([event, line[16:]])
     random.shuffle(train_set)
 
+    # 出于Sklearn的需求，要把心功能1,2,3，4级分级的one hot编码改成有序编码
+    # 由于之前的定义策略，可能会出现有心功能分级的入院被更高优先级的事件盖过（手术，死亡）
+    # 因此，可能存在一些数据事实上有心功能分级，但是事件标签里没写的情况，这些数据直接跳过
     train_feature = list()
     train_label = list()
     for i in range(len(train_set)):
-        train_feature.append(train_set[i][1])
-        event_flag = False
         for j in range(len(train_set[i][0])):
             if int(train_set[i][0][j]) == 1:
+                # 原始的数据设计保证一个i中，只会有一个j==1
+                train_feature.append(train_set[i][1])
                 train_label.append(j+1)
-                event_flag = True
-        if not event_flag:
-            train_label.append(len(train_set[i][0]))
 
     train_feature = np.array(train_feature, dtype=np.float)
     train_label = np.array(train_label, dtype=np.float)
@@ -102,7 +104,6 @@ def data_regenerate(event_dict, origin_file, write_path):
         csv_reader = csv.reader(file)
         head_flag = True
         skip_second_line = True
-        row_count = 0
         for line in csv_reader:
             if head_flag:
                 for i in range(2, len(line)):

@@ -15,7 +15,7 @@ def drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase
     :param x_placeholder:
     :param phase_indicator:
     :param batch_size:
-    :return:
+    :return: output list with TBD format
     loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
     其中 phase_indicator>0代表是测试期，<=0代表是训练期
     """
@@ -24,7 +24,7 @@ def drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase
     bias_initializer = tf.initializers.zeros()
 
     rnn_cell = DropContextualGRUCell(num_hidden, num_feature, keep_rate, phase_indicator, weight_initializer,
-                                     bias_initializer, zero_state)
+                                     bias_initializer)
 
     output_list = list()
     x_unstack = tf.unstack(x_placeholder, axis=1)

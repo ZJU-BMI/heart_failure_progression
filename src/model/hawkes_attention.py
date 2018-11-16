@@ -18,7 +18,7 @@ def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_inten
     :param keep_rate:
     :param mutual_intensity_matrix: numpy 矩阵 Event*Event， e+_ij元素指代j激发i的强度
     :param base_intensity_vector: numpy矩阵
-    :param event_count:
+    :param event_count: 独立事件的个数
     :param omega:
     :return:
     """
@@ -36,12 +36,14 @@ def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_inten
     with tf.name_scope('get_intensity'):
         mutual_intensity_tensor = tf.convert_to_tensor(mutual_intensity_matrix, dtype=tf.float32)
         base_intensity_tensor = tf.convert_to_tensor(base_intensity_vector, dtype=tf.float32)
-
         output_list = tf.convert_to_tensor(output_list)
+
+        # 从原始数据中获取Event和时间信息，注意，此处要求Event一定要在输入数据的最前面
+        # 要求时间一定恰好跟在Event信息后面，如果后期数据语义发生改变，则会造成问题
         event_list = tf.slice(x_placeholder, [0, 0, 0], [-1, -1, event_count])
         time_list = tf.slice(x_placeholder, [0, 0, event_count], [-1, -1, 1])
 
-        # 获取时间强度
+        # 获取各个事件距离目标时间窗口的时间差，并计算出相应的时间激发强度
         time_max = tf.reduce_max(time_list)
         time_interval_list = task_time + time_max - time_list
         time_intensity = tf.exp(-omega*time_interval_list)
@@ -50,11 +52,13 @@ def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_inten
         base_intensity = base_intensity_tensor[task_type]
 
         # 获取互激发矩阵强度
+        # 互激发矩阵中的元素e_ij指代第i类事件激发第j类事件的强度
         mutual_intensity_vector = tf.expand_dims(mutual_intensity_tensor[task_type, :], axis=1)
-        event_list = tf.transpose(event_list, [1, 0, 2])
         mutual_intensity_weight = tf.map_fn(lambda x: tf.matmul(x, mutual_intensity_vector), event_list)
-        mutual_intensity_weight = tf.transpose(time_intensity, [1, 0, 2])*mutual_intensity_weight
-        mutual_sum = tf.reduce_sum(mutual_intensity_weight, axis=0, keep_dims=True)
+
+        # 基于上述强度指导三个权重的分配
+        mutual_intensity_weight = time_intensity*mutual_intensity_weight
+        mutual_sum = tf.reduce_sum(mutual_intensity_weight, axis=1, keepdims=True)
         mutual_intensity_weight = mutual_intensity_weight / mutual_sum
 
     with tf.variable_scope('output_weight'):
@@ -63,11 +67,12 @@ def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_inten
         bias = tf.get_variable('bias', [])
 
     with tf.name_scope('attention_and_output'):
-        fusion_state = tf.reduce_mean(mutual_intensity_weight*output_list, axis=0)
+        output_list = tf.transpose(output_list, [1, 0, 2])
+        fusion_state = tf.reduce_sum(mutual_intensity_weight*output_list, axis=1)
         unnormalized_prediction = tf.matmul(fusion_state, output_weight) + bias + base*base_intensity
         loss = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
 
-    prediction = tf.sigmoid(unnormalized_prediction)
+        prediction = tf.sigmoid(unnormalized_prediction)
 
     return loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, task_time, task_type
 

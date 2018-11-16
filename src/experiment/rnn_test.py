@@ -13,7 +13,7 @@ import datetime
 import data_preprocess.five_validation_data_generation as data_generate
 
 
-def get_metrics(prediction, label, threshold=0.5):
+def get_metrics(prediction, label, threshold=0.2):
     pred_label = list()
     for item in prediction:
         if item > threshold:
@@ -33,7 +33,7 @@ def get_metrics(prediction, label, threshold=0.5):
 
 def run_graph(data_source, max_step, node_list, predict_task, test_step_interval, batch_size, hawkes=False,
               task_time_value=None, task_type_value=None):
-    test_label = data_source.get_test_label()[predict_task]
+    test_label = data_source.get_test_label()[predict_task][:, np.newaxis]
     test_feature = data_source.get_test_feature()
 
     best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0}
@@ -317,13 +317,14 @@ def set_hyperparameter(full_event_test=False):
     num_feature = 123
     learning_rate = 0.001
     keep_rate = 0.6
-    max_iter = 10000
+    max_iter = 2000
     test_interval = 20
 
     if full_event_test:
         label_candidate = ['其它', '再血管化手术', '心功能1级', '心功能2级', '心功能3级', '心功能4级', '死亡', '癌症',
                            '糖尿病入院', '肺病', '肾病入院']
         time_candidate = ['半年', '一年', '两年']
+        time_candidate = ['两年']
     else:
         label_candidate = ['心功能2级', ]
         time_candidate = ['两年', ]
@@ -342,9 +343,9 @@ def set_hyperparameter(full_event_test=False):
 
 
 if __name__ == '__main__':
-    config = set_hyperparameter(full_event_test=False)
-    hawkes_attention_test(config)
-    rnn_self_attention_test(config)
-    rnn_vanilla_attention_test(config)
+    config = set_hyperparameter(full_event_test=True)
     rnn_dropout_test(config)
     rnn_regularization_test(config)
+    rnn_vanilla_attention_test(config)
+    hawkes_attention_test(config)
+    rnn_self_attention_test(config)

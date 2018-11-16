@@ -106,9 +106,7 @@ def generate_label(data_dict, save_path):
     for patient_id in label_dict:
         for key in label_dict[patient_id][0][2]:
             head.append('半年'+key)
-        for key in label_dict[patient_id][0][2]:
             head.append('一年'+key)
-        for key in label_dict[patient_id][0][2]:
             head.append('两年'+key)
         break
     data_to_write.append(head)
