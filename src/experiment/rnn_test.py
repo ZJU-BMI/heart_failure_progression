@@ -38,7 +38,11 @@ def run_graph(data_source, max_step, node_list, predict_task, test_step_interval
 
     best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0}
     best_prediction = None
-    with tf.Session() as sess:
+
+    config = tf.ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = 0.5
+    config.gpu_options.allow_growth = True
+    with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
         current_best_auc = -1
         no_improve_count = 0
@@ -96,10 +100,10 @@ def run_graph(data_source, max_step, node_list, predict_task, test_step_interval
                     if step < max_step / 4:
                         continue
                     # 超过四分之一后，若运行了max iter的十分之一，没有提升，则终止训练
-                    if no_improve_count >= max_step / 10:
+                    if no_improve_count >= test_step_interval * 10:
                         break
                     else:
-                        no_improve_count += 1
+                        no_improve_count += test_step_interval
 
     return best_result, best_prediction, test_label
 
@@ -111,12 +115,15 @@ def rnn_regularization_test(experiment_config):
     num_hidden = experiment_config['num_hidden']
     num_feature = experiment_config['num_feature']
 
-    loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-        regularization_rnn_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
-    train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
+            regularization_rnn_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden,
+                                     keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
-    node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-    five_fold_validation_default(experiment_config, node_list, model='rnn_regularization')
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
+        five_fold_validation_default(experiment_config, node_list, model='rnn_regularization')
 
 
 def rnn_dropout_test(experiment_config):
@@ -126,12 +133,14 @@ def rnn_dropout_test(experiment_config):
     num_hidden = experiment_config['num_hidden']
     num_feature = experiment_config['num_feature']
 
-    loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-        rnn_drop_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
-    train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
+            rnn_drop_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
-    node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-    five_fold_validation_default(experiment_config, node_list, model='rnn_dropout')
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
+        five_fold_validation_default(experiment_config, node_list, model='rnn_dropout')
 
 
 def rnn_vanilla_attention_test(experiment_config):
@@ -140,13 +149,15 @@ def rnn_vanilla_attention_test(experiment_config):
     learning_rate = experiment_config['learning_rate']
     num_hidden = experiment_config['num_hidden']
     num_feature = experiment_config['num_feature']
+    g = tf.Graph()
 
-    loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-        vanilla_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
-    train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
+            vanilla_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
-    node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-    five_fold_validation_default(experiment_config, node_list, model='vanilla_attention')
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
+        five_fold_validation_default(experiment_config, node_list, model='vanilla_attention')
 
 
 def rnn_self_attention_test(experiment_config):
@@ -156,12 +167,14 @@ def rnn_self_attention_test(experiment_config):
     num_hidden = experiment_config['num_hidden']
     num_feature = experiment_config['num_feature']
 
-    loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-        self_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
-    train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
+            self_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
-    node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-    five_fold_validation_default(experiment_config, node_list, model='self_attention')
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
+        five_fold_validation_default(experiment_config, node_list, model='self_attention')
 
 
 def hawkes_attention_test(experiment_config):
@@ -173,15 +186,17 @@ def hawkes_attention_test(experiment_config):
     mutual_intensity_matrix = np.load(experiment_config['mutual_intensity_path'])
     base_intensity_vector = np.load(experiment_config['base_intensity_path'])
 
-    node_tuple = hawkes_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate,
-                                  mutual_intensity_matrix=mutual_intensity_matrix, event_count=11,
-                                  base_intensity_vector=base_intensity_vector)
-    train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(node_tuple[0])
-    node_list = list()
-    for node in node_tuple:
-        node_list.append(node)
-    node_list.append(train_node)
-    five_fold_validation_default(experiment_config, node_list, model='hawkes_attention')
+    g = tf.Graph()
+    with g.as_default():
+        node_tuple = hawkes_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden,
+                                      keep_rate=keep_rate, mutual_intensity_matrix=mutual_intensity_matrix,
+                                      event_count=11, base_intensity_vector=base_intensity_vector)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(node_tuple[0])
+        node_list = list()
+        for node in node_tuple:
+            node_list.append(node)
+        node_list.append(train_node)
+        five_fold_validation_default(experiment_config, node_list, model='hawkes_attention')
 
 
 def five_fold_validation_default(experiment_config, node_list, model):
@@ -293,7 +308,7 @@ def five_fold_validation_default(experiment_config, node_list, model):
         csv.writer(file).writerows(data_to_write)
 
 
-def set_hyperparameter(full_event_test=False):
+def set_hyperparameter(time_window, full_event_test=False):
     """
     :return:
     """
@@ -317,22 +332,18 @@ def set_hyperparameter(full_event_test=False):
     num_feature = 123
     learning_rate = 0.001
     keep_rate = 0.6
-    max_iter = 2000
+    max_iter = 4000
     test_interval = 20
 
     if full_event_test:
         label_candidate = ['其它', '再血管化手术', '心功能1级', '心功能2级', '心功能3级', '心功能4级', '死亡', '癌症',
                            '糖尿病入院', '肺病', '肾病入院']
-        time_candidate = ['半年', '一年', '两年']
-        time_candidate = ['两年']
     else:
         label_candidate = ['心功能2级', ]
-        time_candidate = ['两年', ]
 
     event_list = list()
-    for item_1 in label_candidate:
-        for item_2 in time_candidate:
-            event_list.append(item_2 + item_1)
+    for item in label_candidate:
+        event_list.append(time_window + item)
 
     experiment_configure = {'data_folder': data_folder, 'length': length, 'num_hidden': num_hidden,
                             'batch_size': batch_size, 'num_feature': num_feature, 'learning_rate': learning_rate,
@@ -342,10 +353,16 @@ def set_hyperparameter(full_event_test=False):
     return experiment_configure
 
 
+def main():
+    time_window_list = ['两年', '半年', '一年']
+    for item in time_window_list:
+        config = set_hyperparameter(full_event_test=True, time_window=item)
+        rnn_self_attention_test(config)
+        hawkes_attention_test(config)
+        rnn_dropout_test(config)
+        rnn_regularization_test(config)
+        rnn_vanilla_attention_test(config)
+
+
 if __name__ == '__main__':
-    config = set_hyperparameter(full_event_test=True)
-    rnn_dropout_test(config)
-    rnn_regularization_test(config)
-    rnn_vanilla_attention_test(config)
-    hawkes_attention_test(config)
-    rnn_self_attention_test(config)
+    main()
