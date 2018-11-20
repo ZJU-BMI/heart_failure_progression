@@ -54,6 +54,7 @@ def regularization_rnn_model(num_steps, num_hidden, num_feature, keep_rate):
                         lambda: tf.nn.dropout(x_placeholder, keep_rate))
 
     output_list = regularization_rnn(num_steps, num_hidden, num_feature, x_dropout, phase_indicator, batch_size)
+    # output_list = tf.reduce_mean(tf.convert_to_tensor(output_list), axis=0)
 
     with tf.variable_scope('output_layer'):
         output_weight = tf.get_variable("weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())

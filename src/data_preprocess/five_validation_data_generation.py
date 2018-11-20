@@ -126,17 +126,20 @@ def main(data_length):
     feature_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
     label_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_标签.csv')
     save_root = os.path.abspath('..\\..\\resource\\rnn_data\\')
-    fold_list = five_fold_generate(feature_path, label_path, data_length)
 
-    for i in range(5):
-        feature = fold_list[i][0]
-        feature_np = np.array(feature, dtype=np.float64)
-        np.save(os.path.join(save_root, 'length_{}_{}_fold_feature.npy'.format(str(data_length), str(i))), feature_np)
-        label = fold_list[i][1]
-        for key in label:
-            label_np = np.array(label[key], dtype=np.float64)
-            np.save(os.path.join(save_root, 'length_{}_{}_fold_label_{}.npy'.format(str(data_length), str(i), key)),
-                    label_np)
+    for j in range(10):
+        fold_list = five_fold_generate(feature_path, label_path, data_length)
+        for i in range(5):
+            feature = fold_list[i][0]
+            feature_np = np.array(feature, dtype=np.float64)
+            single_feature_path = 'length_{}_repeat_{}_fold_{}_feature.npy'.format(str(data_length), str(j), str(i))
+            np.save(os.path.join(save_root, single_feature_path), feature_np)
+            label = fold_list[i][1]
+            for key in label:
+                single_label_path = 'length_{}_repeat_{}_fold_{}_{}_label.npy'.format(str(data_length), str(j),
+                                                                                      str(i), key)
+                label_np = np.array(label[key], dtype=np.float64)
+                np.save(os.path.join(save_root, single_label_path), label_np)
 
 
 if __name__ == '__main__':

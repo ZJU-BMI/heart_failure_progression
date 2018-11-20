@@ -3,16 +3,27 @@
 # 使用arXiv 1703.03130 A STRUCTURED SELF-ATTENTIVE SENTENCE EMBEDDING 实现Attention
 # 具体实现参考 https://github.com/flrngel/Self-Attentive-tensorflow
 import tensorflow as tf
+from rnn_regularization import regularization_rnn
 from rnn_dropout import drop_rnn
 
 
-def self_attention(num_steps, num_hidden, num_feature, keep_rate, s1=2, s2=2):
+def self_attention(num_steps, num_hidden, num_feature, keep_rate, cell_type, s1=2, s2=2):
     batch_size = tf.placeholder(tf.int32, [], name='batch_size')
     x_placeholder = tf.placeholder(tf.float32, [None, num_steps, num_feature], name='x_placeholder')
     y_placeholder = tf.placeholder(tf.float32, [None, 1], name='y_placeholder')
     phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
 
-    output_list = drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase_indicator, batch_size)
+    if cell_type == 'rnn_regularization':
+        x_placeholder = tf.cond(phase_indicator > 0,
+                                lambda: x_placeholder,
+                                lambda: tf.nn.dropout(x_placeholder, keep_rate))
+        output_list = regularization_rnn(num_steps, num_hidden, num_feature, x_placeholder, phase_indicator, batch_size)
+    elif cell_type == 'rnn_dropout':
+        output_list = drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase_indicator,
+                               batch_size)
+    else:
+        raise ValueError('Cell Type Name Invalid')
+
     with tf.variable_scope('attention_weight'):
         weight_s1 = tf.get_variable("weight_s1", [s1, num_hidden], initializer=tf.initializers.orthogonal())
         weight_s2 = tf.get_variable("weight_s2", [s2, s1], initializer=tf.initializers.orthogonal())
@@ -44,7 +55,8 @@ def self_attention(num_steps, num_hidden, num_feature, keep_rate, s1=2, s2=2):
     with tf.name_scope('attention_output'):
         unnormalized_prediction = tf.matmul(attention_flatten, output_weight) + bias
         loss = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction,
-                                               multi_class_labels=y_placeholder) + penalty
+                                               multi_class_labels=y_placeholder)
+        # + penalty
         prediction = tf.sigmoid(unnormalized_prediction)
 
     return loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator

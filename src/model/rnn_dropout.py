@@ -42,11 +42,13 @@ def rnn_drop_model(num_steps, num_hidden, num_feature, keep_rate):
     phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
 
     output_list = drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase_indicator, batch_size)
+    output_list = tf.reduce_mean(tf.convert_to_tensor(output_list), axis=0)
+
     with tf.variable_scope('output_layer'):
         output_weight = tf.get_variable("weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
         bias = tf.get_variable('bias', [])
 
-    unnormalized_prediction = tf.matmul(output_list[-1], output_weight) + bias
+    unnormalized_prediction = tf.matmul(output_list, output_weight) + bias
     loss = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
 
     prediction = tf.sigmoid(unnormalized_prediction)

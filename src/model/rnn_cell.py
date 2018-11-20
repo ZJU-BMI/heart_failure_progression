@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 # 此处虽然定义了ContextualGRUCell的定义
 # 但是Contextual GRU其实原版GRU在算法上没有区别，其Contextual更像是在语义上进行定义
 
@@ -111,10 +112,14 @@ def main():
                                weight_initializer=initializer_o, bias_initializer=initializer_z)
     d_cell = DropContextualGRUCell(num_hidden=num_hidden, input_length=input_length, phase_indicator=phase_indicator,
                                    weight_initializer=initializer_o, bias_initializer=initializer_z, keep_prob=0.9)
+    r_cell = ContextualGRUCellRevised(num_hidden=num_hidden, input_length=input_length, phase_indicator=phase_indicator,
+                                      weight_initializer=initializer_o, bias_initializer=initializer_z, event_index=10)
 
     x_placeholder = tf.placeholder(tf.float32, [None, num_steps, input_length], name='x_placeholder')
     x_unstack = tf.unstack(x_placeholder, axis=1)
     state = zero_state
+    for i in range(num_steps):
+        state = r_cell.call(x_unstack[i], state, reserve_intensity=0.2)
     for i in range(num_steps):
         state = c_cell.call(x_unstack[i], state)
     for i in range(num_steps):

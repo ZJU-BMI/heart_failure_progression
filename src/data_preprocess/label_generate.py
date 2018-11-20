@@ -28,7 +28,7 @@ def read_data(file_path):
     return data_dict
 
 
-def generate_label(data_dict, save_path):
+def generate_label(data_dict, save_path,):
     """
     我们所要关注的是7类指标在半年，1年，2年内是否会发生进展，也就是有14个标签
     :param data_dict:

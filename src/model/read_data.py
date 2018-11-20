@@ -5,11 +5,12 @@ import random
 
 
 class DataSource(object):
-    def __init__(self, data_folder, data_length, test_fold_num, batch_size, reserve_time=False):
+    def __init__(self, data_folder, data_length, repeat, test_fold_num, batch_size, reserve_time=False):
         """
         :param data_folder:
         :param data_length:
         :param test_fold_num:
+        :param repeat:
         :param batch_size:
         :param reserve_time:  入院时间差是原始数据中唯一没有，也不适合做归一化的变量，加入模型可能对模型产生不利影响
         因此此处可以设定是否要加入时间变量
@@ -19,6 +20,7 @@ class DataSource(object):
         self.__batch_size = batch_size
         self.__data_length = data_length
         self.__reserve_time = reserve_time
+        self.__repeat = repeat
 
         train_feature_list, train_label_dict, test_feature_list, test_label_dict = self.__read_data()
         if batch_size >= len(train_feature_list):
@@ -76,12 +78,13 @@ class DataSource(object):
     def __read_data(self):
         data_length = self.__data_length
         data_folder = self.__data_folder
+        repeat = self.__repeat
         train_feature_list = list()
         test_feature_list = list()
         train_label_dict = dict()
         test_label_dict = dict()
         for i in range(5):
-            feature_name = 'length_{}_{}_fold_feature.npy'.format(str(data_length), str(i))
+            feature_name = 'length_{}_repeat_{}_fold_{}_feature.npy'.format(str(data_length), str(repeat), str(i))
             feature = np.load(os.path.join(data_folder, feature_name))
             if i == self.__test_fold:
                 for j in range(len(feature)):
@@ -127,7 +130,8 @@ class DataSource(object):
             if not test_label_dict.__contains__(key_name):
                 test_label_dict[key_name] = list()
             for i in range(5):
-                label_name = 'length_{}_{}_fold_label_{}.npy'.format(str(data_length), str(i), key_name)
+                label_name = 'length_{}_repeat_{}_fold_{}_{}_label.npy'.format(
+                    str(data_length), str(repeat), str(i), key_name)
                 label = np.load(os.path.join(data_folder, label_name))
                 if i == self.__test_fold:
                     for item in label:
@@ -137,15 +141,18 @@ class DataSource(object):
 
                 for item in label:
                     train_label_dict[key_name].append(item)
+            train_label_dict[key_name] = np.array(train_label_dict[key_name])
+
         return train_feature_list, train_label_dict, test_feature_list, test_label_dict
 
 
 def main():
     data_folder = os.path.abspath('..\\..\\resource\\rnn_data')
-    data_length = 6
+    data_length = 3
     test_fold_num = 0
     batch_size = 128
-    data_source = DataSource(data_folder, data_length, test_fold_num, batch_size)
+    repeat = 8
+    data_source = DataSource(data_folder, data_length, 8, test_fold_num, batch_size)
     for i in range(100):
         batch_data = data_source.get_next_batch('一年肾病入院')
         print(batch_data[0])

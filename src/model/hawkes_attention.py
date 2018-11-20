@@ -5,12 +5,13 @@
 # 直接作为各个Hidden State的权重，然后取平均，乘矩阵算一个概率，和基准概率相加，作为最终判断概率
 import tensorflow as tf
 import os
+from rnn_regularization import regularization_rnn
 from rnn_dropout import drop_rnn
 import csv
 
 
 def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_intensity_matrix, base_intensity_vector,
-                     event_count, omega=0.006):
+                     event_count, cell_type, omega=0.006):
     """
     :param num_steps:
     :param num_hidden:
@@ -19,6 +20,7 @@ def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_inten
     :param mutual_intensity_matrix: numpy 矩阵 Event*Event， e+_ij元素指代j激发i的强度
     :param base_intensity_vector: numpy矩阵
     :param event_count: 独立事件的个数
+    :param cell_type: 'rnn_dropout' or 'rnn_regularization'
     :param omega:
     :return:
     """
@@ -31,7 +33,17 @@ def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_inten
     # 按照一开始的Event标定序列，直接输入相应数字
     task_type = tf.placeholder(tf.int32, shape=[], name="task_type")
 
-    output_list = drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase_indicator, batch_size)
+    if cell_type == 'rnn_regularization':
+        x_placeholder = tf.cond(phase_indicator > 0,
+                                lambda: x_placeholder,
+                                lambda: tf.nn.dropout(x_placeholder, keep_rate))
+
+        output_list = regularization_rnn(num_steps, num_hidden, num_feature, x_placeholder, phase_indicator, batch_size)
+    elif cell_type == 'rnn_dropout':
+        output_list = drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase_indicator,
+                               batch_size)
+    else:
+        raise ValueError('')
 
     with tf.name_scope('get_intensity'):
         mutual_intensity_tensor = tf.convert_to_tensor(mutual_intensity_matrix, dtype=tf.float32)
@@ -63,13 +75,12 @@ def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_inten
 
     with tf.variable_scope('output_weight'):
         output_weight = tf.get_variable("output_weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
-        base = tf.get_variable('base', [])
-        bias = tf.get_variable('bias', [])
+        bias = tf.get_variable('bias', [], initializer=tf.initializers.zeros())
 
     with tf.name_scope('attention_and_output'):
         output_list = tf.transpose(output_list, [1, 0, 2])
         fusion_state = tf.reduce_sum(mutual_intensity_weight*output_list, axis=1)
-        unnormalized_prediction = tf.matmul(fusion_state, output_weight) + bias + base*base_intensity
+        unnormalized_prediction = tf.matmul(fusion_state, output_weight) + bias
         loss = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
 
         prediction = tf.sigmoid(unnormalized_prediction)
