@@ -1,7 +1,7 @@
 import tensorflow as tf
 from sklearn import metrics
 import numpy as np
-from read_data import DataSource
+from experiment.read_data import DataSource
 from model.rnn_regularization_revised import revised_rnn_model
 import os
 import csv
@@ -101,8 +101,8 @@ def run_graph(data_source, max_step, node_list, predict_task, test_step_interval
                     # saver.save(sess, save_path)
 
                 if test_loss > minimum_loss and auc < current_best_auc:
-                    # 连续10次测试Loss或AUC没有优化，则停止训练
-                    if no_improve_count >= test_step_interval * 10:
+                    # 连续20次测试Loss或AUC没有优化，则停止训练
+                    if no_improve_count >= test_step_interval * 20:
                         break
                     else:
                         no_improve_count += test_step_interval
@@ -138,7 +138,7 @@ def revised_gru_hawkes(shared_hyperparameter, keep_rate, num_hidden):
         for node in node_tuple:
             node_list.append(node)
         node_list.append(train_node)
-        five_fold_validation_default(shared_hyperparameter, node_list, model='hawkes_attention')
+        five_fold_validation_default(shared_hyperparameter, node_list, model='hawkes_revise')
 
 
 def five_fold_validation_default(experiment_config, node_list, model):
@@ -169,6 +169,7 @@ def five_fold_validation_default(experiment_config, node_list, model):
         for i in range(10):
             for j in range(5):
                 print('{}_repeat_{}_fold_{}_task_{}_log'.format(model, i, j, task))
+                print(experiment_config)
                 # 从洗过的数据中读取数据
                 data_source = DataSource(data_folder, data_length=length, test_fold_num=j, batch_size=batch_size,
                                          reserve_time=True, repeat=i)
@@ -226,6 +227,8 @@ def save_result(save_folder, experiment_config, result_record, task_name):
 
 def set_hyperparameter(time_window, full_event_test=False):
     """
+    :param time_window:
+    :param full_event_test:
     :return:
     """
     data_folder = os.path.abspath('..\\..\\resource\\rnn_data')
@@ -250,7 +253,7 @@ def set_hyperparameter(time_window, full_event_test=False):
     test_interval = 20
 
     if full_event_test:
-        label_candidate = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术', '死亡', '癌症',  '其它',
+        label_candidate = ['心功能1级', '心功能3级', '心功能2级', '心功能4级', '再血管化手术', '死亡', '癌症',
                            '糖尿病入院', '肺病', '肾病入院']
     else:
         label_candidate = ['心功能2级', ]
@@ -273,7 +276,7 @@ def main():
     for item in time_window_list:
         config = set_hyperparameter(full_event_test=True, time_window=item)
         if test_model == 0:
-            revised_gru_hawkes(config,  keep_rate=0.8, num_hidden=40)
+            revised_gru_hawkes(config,  keep_rate=0.8, num_hidden=20)
 
 
 if __name__ == '__main__':

@@ -151,7 +151,6 @@ def main():
     data_length = 3
     test_fold_num = 0
     batch_size = 128
-    repeat = 8
     data_source = DataSource(data_folder, data_length, 8, test_fold_num, batch_size)
     for i in range(100):
         batch_data = data_source.get_next_batch('一年肾病入院')

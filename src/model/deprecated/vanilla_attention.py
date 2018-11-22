@@ -1,8 +1,9 @@
 # encoding=utf-8-sig
 # 所谓Vanilla Attention，就是很单纯的对Hidden State进行加权求和
+# deprecated
 import tensorflow as tf
 from rnn_regularization import regularization_rnn
-from rnn_dropout import drop_rnn
+from deprecated.rnn_dropout import drop_rnn
 
 
 def vanilla_attention(num_steps, num_hidden, num_feature, keep_rate, cell_type):

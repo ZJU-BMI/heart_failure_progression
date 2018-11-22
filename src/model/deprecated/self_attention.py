@@ -4,7 +4,7 @@
 # 具体实现参考 https://github.com/flrngel/Self-Attentive-tensorflow
 import tensorflow as tf
 from rnn_regularization import regularization_rnn
-from rnn_dropout import drop_rnn
+from deprecated.rnn_dropout import drop_rnn
 
 
 def self_attention(num_steps, num_hidden, num_feature, keep_rate, cell_type, s1=2, s2=2):

@@ -6,10 +6,11 @@
 import tensorflow as tf
 import os
 from rnn_regularization import regularization_rnn
-from rnn_dropout import drop_rnn
+from deprecated.rnn_dropout import drop_rnn
 import csv
 
 
+# deprecated
 def hawkes_attention(num_steps, num_hidden, num_feature, keep_rate, mutual_intensity_matrix, base_intensity_vector,
                      event_count, cell_type, omega=0.006):
     """

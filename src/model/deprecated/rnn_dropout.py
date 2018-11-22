@@ -2,6 +2,7 @@
 # 本代码用于测试最普通的RNN的性能
 # 本模块中使用的Drop策略是 arXiv 1603.05118 Recurrent Dropout without Memory Loss中所提及的策略
 # 也就是使用GRU对当前输入所做产生的隐变量g_t做随机丢弃
+# deprecated
 import tensorflow as tf
 from rnn_cell import DropContextualGRUCell
 

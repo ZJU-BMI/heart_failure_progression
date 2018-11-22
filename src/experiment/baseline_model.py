@@ -200,6 +200,7 @@ def main():
     output_dict = read_data(feature_path, label_path)
 
     result_list = list()
+
     result_list.append(['CV_Repeat', 'Test_Fold', 'Method', 'Event', 'AUC', 'ACC', 'PRECISION', 'RECALL', 'F1'])
     for repeat in range(0, 10):
         data_in_five_split = reconstruct_data(output_dict)
@@ -240,7 +241,7 @@ def main():
                 auc, acc, pre, recall, f1 = rf_result
                 result_list.append([repeat, i, 'rf', key, auc, acc, pre, recall, f1])
 
-    write_path = os.path.abspath('..\\..\\resource\\非时序基线模型结果.csv')
+    write_path = os.path.abspath('..\\..\\resource\\prediction_result\\非时序基线模型结果.csv')
     with open(write_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(result_list)
     print('finish')

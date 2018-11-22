@@ -1,12 +1,12 @@
 import tensorflow as tf
 from sklearn import metrics
 import numpy as np
-from read_data import DataSource
-from model.rnn_regularization import regularization_rnn_model
-from model.rnn_dropout import rnn_drop_model
-from model.self_attention import self_attention
-from model.vanilla_attention import vanilla_attention
-from model.hawkes_attention import hawkes_attention
+from experiment.read_data import DataSource
+from model.fuse_hawkes_rnn import fuse_hawkes_rnn_model
+from model.fuse_time_rnn import fuse_time_rnn_model
+from model.time_rnn import time_rnn_model
+from model.hawkes_rnn import hawkes_rnn_model
+from model.vanilla_rnn import vanilla_rnn_model
 import os
 import csv
 import datetime
@@ -30,19 +30,110 @@ def get_metrics(prediction, label, threshold=0.2):
     return accuracy, precision, recall, f1, auc
 
 
-def run_graph(data_source, max_step, node_list, predict_task, test_step_interval, batch_size, save_path, hawkes=False,
-              task_time_value=None, task_type_value=None):
-    test_label = data_source.get_test_label()[predict_task][:, np.newaxis]
-    test_feature = data_source.get_test_feature()
+def vanilla_rnn_test(shared_hyperparameter):
+    length = shared_hyperparameter['length']
+    learning_rate = shared_hyperparameter['learning_rate']
+    keep_rate = shared_hyperparameter['keep_rate']
+    num_hidden = shared_hyperparameter['num_hidden']
+    num_feature = shared_hyperparameter['num_feature']
 
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator = \
+            vanilla_rnn_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, train_node]
+        five_fold_validation_default(shared_hyperparameter, node_list, model='vanilla_rnn')
+
+
+def hawkes_rnn_test(shared_hyperparameter):
+    length = shared_hyperparameter['length']
+    learning_rate = shared_hyperparameter['learning_rate']
+    keep_rate = shared_hyperparameter['keep_rate']
+    num_hidden = shared_hyperparameter['num_hidden']
+    num_feature = shared_hyperparameter['num_feature']
+
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, task_type, time_interval, \
+            mutual_intensity, base_intensity = hawkes_rnn_model(num_feature=num_feature, num_steps=length,
+                                                                num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, task_type,
+                     time_interval, mutual_intensity, base_intensity, train_node]
+        five_fold_validation_default(shared_hyperparameter, node_list, model='hawkes_rnn')
+
+
+def time_rnn_test(shared_hyperparameter):
+    length = shared_hyperparameter['length']
+    learning_rate = shared_hyperparameter['learning_rate']
+    keep_rate = shared_hyperparameter['keep_rate']
+    num_hidden = shared_hyperparameter['num_hidden']
+    num_feature = shared_hyperparameter['num_feature']
+
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, time_interval = \
+            time_rnn_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, time_interval,
+                     train_node]
+        five_fold_validation_default(shared_hyperparameter, node_list, model='time_rnn')
+
+
+def fuse_time_rnn_test(shared_hyperparameter):
+    length = shared_hyperparameter['length']
+    learning_rate = shared_hyperparameter['learning_rate']
+    keep_rate = shared_hyperparameter['keep_rate']
+    num_hidden = shared_hyperparameter['num_hidden']
+    num_feature = shared_hyperparameter['num_feature']
+
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, time_interval = \
+            fuse_hawkes_rnn_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, time_interval,
+                     train_node]
+        five_fold_validation_default(shared_hyperparameter, node_list, model='fuse_time_rnn')
+
+
+def fuse_hawkes_rnn_test(shared_hyperparameter):
+    length = shared_hyperparameter['length']
+    learning_rate = shared_hyperparameter['learning_rate']
+    keep_rate = shared_hyperparameter['keep_rate']
+    num_hidden = shared_hyperparameter['num_hidden']
+    num_feature = shared_hyperparameter['num_feature']
+
+    g = tf.Graph()
+    with g.as_default():
+        loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, task_type, time_interval, \
+            mutual_intensity, base_intensity = fuse_time_rnn_model(num_feature=num_feature, num_steps=length,
+                                                                   num_hidden=num_hidden, keep_rate=keep_rate)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+
+        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator, task_type,
+                     time_interval, mutual_intensity, base_intensity, train_node]
+        five_fold_validation_default(shared_hyperparameter, node_list, model='fuse_hawkes_rnn')
+
+
+def run_graph(data_source, max_step, node_list, test_step_interval, task_index, task_name, experiment_config, model):
     best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0}
     best_prediction = None
+
+    mutual_intensity_path = experiment_config['mutual_intensity_path']
+    base_intensity_path = experiment_config['base_intensity_path']
+    mutual_intensity_value = np.load(mutual_intensity_path)
+    base_intensity_value = np.load(base_intensity_path)
 
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = 0.5
     config.gpu_options.allow_growth = True
 
-    # saver = tf.train.Saver()
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
         current_best_auc = -1
@@ -50,35 +141,27 @@ def run_graph(data_source, max_step, node_list, predict_task, test_step_interval
 
         minimum_loss = 10000
         for step in range(max_step):
-            batch_x, batch_y = data_source.get_next_batch(predict_task)
-            if hawkes:
-                loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, task_time, \
-                    task_type, train_node = node_list
-                train_feed_dict = {x_placeholder: batch_x, y_placeholder: batch_y, batch_size_model: batch_size,
-                                   phase_indicator: -1, task_time: task_time_value, task_type: task_type_value}
-            else:
-                loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, \
-                    train_node = node_list
-                train_feed_dict = {x_placeholder: batch_x, y_placeholder: batch_y, batch_size_model: batch_size,
-                                   phase_indicator: -1}
+            train_node = node_list[-1]
+            loss = node_list[0]
+            prediction = node_list[1]
+            train_feed_dict, train_label = feed_dict_and_label(data_object=data_source, node_list=node_list,
+                                                               base_intensity_value=base_intensity_value,
+                                                               task_index=task_index, test_phase=False, model=model,
+                                                               mutual_intensity_value=mutual_intensity_value,
+                                                               task_name=task_name)
             sess.run(train_node, feed_dict=train_feed_dict)
+
             # Test Performance
             if step % test_step_interval == 0:
-                if hawkes:
-                    loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, task_time, \
-                        task_type, train_node = node_list
-                    test_feed_dict = {x_placeholder: test_feature, y_placeholder: test_label,
-                                      batch_size_model: len(test_feature), phase_indicator: 2,
-                                      task_time: task_time_value, task_type: task_type_value}
-                else:
-                    loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, \
-                        train_node = node_list
-                    test_feed_dict = {x_placeholder: test_feature, y_placeholder: test_label,
-                                      batch_size_model: len(test_feature), phase_indicator: 2}
+                test_feed_dict, test_label = feed_dict_and_label(data_object=data_source, node_list=node_list,
+                                                                 base_intensity_value=base_intensity_value,
+                                                                 task_index=task_index, test_phase=True, model=model,
+                                                                 mutual_intensity_value=mutual_intensity_value,
+                                                                 task_name=task_name)
 
                 train_loss, train_prediction = sess.run([loss, prediction], feed_dict=train_feed_dict)
                 test_loss, test_prediction = sess.run([loss, prediction], feed_dict=test_feed_dict)
-                accuracy_, precision_, recall_, f1_, auc_ = get_metrics(train_prediction, batch_y)
+                accuracy_, precision_, recall_, f1_, auc_ = get_metrics(train_prediction, train_label)
                 accuracy, precision, recall, f1, auc = get_metrics(test_prediction, test_label)
                 result_template = 'iter:{}, train: loss:{:.5f}, auc:{:.4f}, acc:{:.2f}, precision:{:.2f}, ' \
                                   'recall:{:.2f}, f1:{:.2f}. test: loss:{:.5f}, auc:{:.4f}, acc:{:.2f}, ' \
@@ -100,9 +183,9 @@ def run_graph(data_source, max_step, node_list, predict_task, test_step_interval
                     best_prediction = test_prediction
                     # saver.save(sess, save_path)
 
-                if test_loss > minimum_loss and auc < current_best_auc:
-                    # 连续10次测试Loss或AUC没有优化，则停止训练
-                    if no_improve_count >= test_step_interval * 10:
+                if test_loss >= minimum_loss and auc <= current_best_auc:
+                    # 连续20次测试Loss或AUC没有优化，则停止训练
+                    if no_improve_count >= test_step_interval * 20:
                         break
                     else:
                         no_improve_count += test_step_interval
@@ -114,175 +197,102 @@ def run_graph(data_source, max_step, node_list, predict_task, test_step_interval
                 if test_loss < minimum_loss:
                     minimum_loss = test_loss
 
-    return best_result, best_prediction, test_label
+    return best_result, best_prediction
 
 
-def rnn_regularization_test(shared_hyperparameter, keep_rate, num_hidden):
-    length = shared_hyperparameter['length']
-    learning_rate = shared_hyperparameter['learning_rate']
-    num_feature = shared_hyperparameter['num_feature']
-
-    shared_hyperparameter['keep_rate'] = keep_rate
-    shared_hyperparameter['num_hidden'] = num_hidden
-    shared_hyperparameter['model'] = 'regularization'
-
-    g = tf.Graph()
-    with g.as_default():
-        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-            regularization_rnn_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden,
-                                     keep_rate=keep_rate)
-        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-
-        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-        five_fold_validation_default(shared_hyperparameter, node_list, model='rnn_regularization')
-
-
-def rnn_dropout_test(shared_hyperparameter, keep_rate, num_hidden):
-    length = shared_hyperparameter['length']
-    learning_rate = shared_hyperparameter['learning_rate']
-    num_feature = shared_hyperparameter['num_feature']
-
-    shared_hyperparameter['keep_rate'] = keep_rate
-    shared_hyperparameter['num_hidden'] = num_hidden
-    shared_hyperparameter['model'] = 'dropout'
-
-    g = tf.Graph()
-    with g.as_default():
-        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-            rnn_drop_model(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate)
-        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-
-        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-        five_fold_validation_default(shared_hyperparameter, node_list, model='rnn_dropout')
-
-
-def rnn_vanilla_attention_test(shared_hyperparameter, keep_rate, cell_type, num_hidden):
-    length = shared_hyperparameter['length']
-    learning_rate = shared_hyperparameter['learning_rate']
-    num_feature = shared_hyperparameter['num_feature']
-    g = tf.Graph()
-
-    shared_hyperparameter['keep_rate'] = keep_rate
-    shared_hyperparameter['num_hidden'] = num_hidden
-    shared_hyperparameter['model'] = 'vanilla_attention'
-
-    with g.as_default():
-        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-            vanilla_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate,
-                              cell_type=cell_type)
-        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-
-        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-        five_fold_validation_default(shared_hyperparameter, node_list, model='vanilla_attention')
-
-
-def rnn_self_attention_test(shared_hyperparameter, cell_type, keep_rate, num_hidden):
-    length = shared_hyperparameter['length']
-    learning_rate = shared_hyperparameter['learning_rate']
-    num_feature = shared_hyperparameter['num_feature']
-
-    shared_hyperparameter['keep_rate'] = keep_rate
-    shared_hyperparameter['num_hidden'] = num_hidden
-    shared_hyperparameter['model'] = 'self_attention'
-
-    g = tf.Graph()
-    with g.as_default():
-        loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator = \
-            self_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden, keep_rate=keep_rate,
-                           cell_type=cell_type)
-        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-
-        node_list = [loss, prediction, x_placeholder, y_placeholder, batch_size_model, phase_indicator, train_node]
-        five_fold_validation_default(shared_hyperparameter, node_list, model='self_attention')
-
-
-def hawkes_attention_test(shared_hyperparameter, cell_type, keep_rate, num_hidden):
-    length = shared_hyperparameter['length']
-    learning_rate = shared_hyperparameter['learning_rate']
-    num_feature = shared_hyperparameter['num_feature']
-    mutual_intensity_matrix = np.load(shared_hyperparameter['mutual_intensity_path'])
-    base_intensity_vector = np.load(shared_hyperparameter['base_intensity_path'])
-
-    shared_hyperparameter['keep_rate'] = keep_rate
-    shared_hyperparameter['num_hidden'] = num_hidden
-    shared_hyperparameter['model'] = 'hawkes_attention'
-
-    g = tf.Graph()
-    with g.as_default():
-        node_tuple = hawkes_attention(num_feature=num_feature, num_steps=length, num_hidden=num_hidden,
-                                      keep_rate=keep_rate, mutual_intensity_matrix=mutual_intensity_matrix,
-                                      event_count=11, base_intensity_vector=base_intensity_vector, cell_type=cell_type)
-        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(node_tuple[0])
-        node_list = list()
-        for node in node_tuple:
-            node_list.append(node)
-        node_list.append(train_node)
-        five_fold_validation_default(shared_hyperparameter, node_list, model='hawkes_attention')
+def feed_dict_and_label(data_object, node_list, task_name, task_index, test_phase, model, mutual_intensity_value,
+                        base_intensity_value):
+    event_count = len(mutual_intensity_value)
+    if test_phase:
+        input_x, input_y = data_object.get_test_feature(), data_object.get_test_label()[task_name]
+        input_y = input_y[:, np.newaxis]
+        phase_value = -1
+        batch_size_value = len(input_x)
+        time_interval_value = np.zeros([len(input_x), len(input_x[0])])
+        for i in range(len(input_x)):
+            for j in range(len(input_x[i])):
+                if j == 0:
+                    time_interval_value[i][j] = 0
+                else:
+                    time_interval_value[i][j] = input_x[i][j][event_count] - input_x[i][j-1][event_count]
+    else:
+        input_x, input_y = data_object.get_next_batch(task_name)
+        phase_value = 1
+        batch_size_value = len(input_x)
+        time_interval_value = np.zeros([len(input_x), len(input_x[0])])
+        for i in range(len(input_x)):
+            for j in range(len(input_x[i])):
+                if j == 0:
+                    time_interval_value[i][j] = 0
+                else:
+                    time_interval_value[i][j] = input_x[i][j][event_count] - input_x[i][j-1][event_count]
+    if model == 'fuse_hawkes_rnn':
+        _, _, x_placeholder, y_placeholder, batch_size, phase_indicator, task_type, time_interval, mutual_intensity, \
+            base_intensity, _ = node_list
+        feed_dict = {x_placeholder: input_x, y_placeholder: input_y, batch_size: batch_size_value,
+                     task_type: task_index, time_interval: time_interval_value, phase_indicator: phase_value,
+                     mutual_intensity: mutual_intensity_value, base_intensity: base_intensity_value}
+        return feed_dict, input_y
+    elif model == 'fuse_time_rnn':
+        _, _, x_placeholder, y_placeholder, batch_size, phase_indicator, time_interval, _ = node_list
+        feed_dict = {x_placeholder: input_x, y_placeholder: input_y, batch_size: batch_size_value,
+                     time_interval: time_interval_value, phase_indicator: phase_value}
+        return feed_dict, input_y
+    elif model == 'time_rnn':
+        _, _, x_placeholder, y_placeholder, batch_size, phase_indicator, time_interval, _ = node_list
+        feed_dict = {x_placeholder: input_x, y_placeholder: input_y, batch_size: batch_size_value,
+                     time_interval: time_interval_value, phase_indicator: phase_value}
+        return feed_dict, input_y
+    elif model == 'vanilla_rnn':
+        _, _, x_placeholder, y_placeholder, batch_size, phase_indicator, _ = node_list
+        feed_dict = {x_placeholder: input_x, y_placeholder: input_y, batch_size: batch_size_value,
+                     phase_indicator: phase_value}
+        return feed_dict, input_y
+    elif model == 'hawkes_rnn':
+        _, _, x_placeholder, y_placeholder, batch_size, phase_indicator, task_type, time_interval, mutual_intensity, \
+            base_intensity, _ = node_list
+        feed_dict = {x_placeholder: input_x, y_placeholder: input_y, batch_size: batch_size_value,
+                     task_type: task_index, time_interval: time_interval_value, phase_indicator: phase_value,
+                     mutual_intensity: mutual_intensity_value, base_intensity: base_intensity_value}
+        return feed_dict, input_y
+    else:
+        raise ValueError('invalid model name')
 
 
 def five_fold_validation_default(experiment_config, node_list, model):
-    event_id_dict = dict()
-    event_id_dict['糖尿病入院'] = 0
-    event_id_dict['肾病入院'] = 1
-    event_id_dict['其它'] = 2
-    event_id_dict['心功能1级'] = 3
-    event_id_dict['心功能2级'] = 4
-    event_id_dict['心功能3级'] = 5
-    event_id_dict['心功能4级'] = 6
-    event_id_dict['死亡'] = 7
-    event_id_dict['再血管化手术'] = 8
-    event_id_dict['癌症'] = 9
-    event_id_dict['肺病'] = 10
-
     length = experiment_config['length']
     data_folder = experiment_config['data_folder']
     batch_size = experiment_config['batch_size']
     event_list = experiment_config['event_list']
     max_iter = experiment_config['max_iter']
     test_step_interval = experiment_config['test_step_interval']
-    if model == 'hawkes_attention':
-        hawkes_flag = True
-    else:
-        hawkes_flag = False
+    event_id_dict = experiment_config['event_id_dict']
 
     # 五折交叉验证，跑十次
     for task in event_list:
+        task_index = event_id_dict[task[2:]]
         result_record = dict()
         save_folder = os.path.abspath('..\\..\\resource\\prediction_result\\{}'.format(model))
         for i in range(10):
             for j in range(5):
+                # 输出当前实验设置
                 print('{}_repeat_{}_fold_{}_task_{}_log'.format(model, i, j, task))
+                for key in experiment_config:
+                    print(key+': '+str(experiment_config[key]))
+
                 # 从洗过的数据中读取数据
                 data_source = DataSource(data_folder, data_length=length, test_fold_num=j, batch_size=batch_size,
                                          reserve_time=True, repeat=i)
                 if not result_record.__contains__(j):
                     result_record[j] = dict()
 
-                save_path = os.path.join(save_folder, 'task_{}_repeat_{}_fold_{}_model'.format(task, i, j))
-                if hawkes_flag:
-                    task_time = task[0: 2]
-                    task_type = task[2:]
-                    task_type_value = event_id_dict[task_type]
-                    if task_time == '半年':
-                        task_time_value = 90
-                    elif task_time == '一年':
-                        task_time_value = 180
-                    elif task_time == '两年':
-                        task_time_value = 365
-                    else:
-                        raise ValueError('')
-
-                    best_result, best_prediction, test_label = \
-                        run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list, predict_task=task,
-                                  batch_size=batch_size, test_step_interval=test_step_interval, hawkes=hawkes_flag,
-                                  task_time_value=task_time_value, task_type_value=task_type_value, save_path=save_path)
-                else:
-                    best_result, best_prediction, test_label = \
-                        run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list, predict_task=task,
-                                  batch_size=batch_size, test_step_interval=test_step_interval, save_path=save_path)
+                best_result, best_prediction = \
+                    run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
+                              test_step_interval=test_step_interval, task_index=task_index, model=model,
+                              experiment_config=experiment_config, task_name=task)
                 print(task)
                 print(best_result)
-                result_record[j][i] = best_result, best_prediction, test_label
+                result_record[j][i] = best_result, best_prediction
 
                 current_auc_mean = 0
                 count = 0
@@ -342,17 +352,30 @@ def set_hyperparameter(time_window, full_event_test=False):
     test_interval = 20
     """
     length = 3
-    num_hidden = 10
     batch_size = 256
     num_feature = 123
     learning_rate = 0.0005
     max_iter = 20000
     test_interval = 20
+    num_hidden = 32
+    keep_rate = 0.8
+
+    event_id_dict = dict()
+    event_id_dict['糖尿病入院'] = 0
+    event_id_dict['肾病入院'] = 1
+    event_id_dict['其它'] = 2
+    event_id_dict['心功能1级'] = 3
+    event_id_dict['心功能2级'] = 4
+    event_id_dict['心功能3级'] = 5
+    event_id_dict['心功能4级'] = 6
+    event_id_dict['死亡'] = 7
+    event_id_dict['再血管化手术'] = 8
+    event_id_dict['癌症'] = 9
+    event_id_dict['肺病'] = 10
 
     if full_event_test:
-        label_candidate = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术', '死亡', '癌症',  '其它',
+        label_candidate = ['心功能3级', '心功能2级', '心功能1级', '心功能4级', '再血管化手术', '死亡', '癌症',  '其它',
                            '糖尿病入院', '肺病', '肾病入院']
-        label_candidate = ['心功能1级', '心功能2级', '心功能3级', '心功能4级']
     else:
         label_candidate = ['心功能2级', ]
 
@@ -362,27 +385,27 @@ def set_hyperparameter(time_window, full_event_test=False):
 
     experiment_configure = {'data_folder': data_folder, 'length': length, 'num_hidden': num_hidden,
                             'batch_size': batch_size, 'num_feature': num_feature, 'learning_rate': learning_rate,
-                            'max_iter': max_iter, 'test_step_interval': test_interval,
+                            'max_iter': max_iter, 'test_step_interval': test_interval, 'keep_rate': keep_rate,
                             'event_list': event_list, 'mutual_intensity_path': mutual_intensity_path,
-                            'base_intensity_path': base_intensity_path}
+                            'base_intensity_path': base_intensity_path, 'event_id_dict': event_id_dict}
     return experiment_configure
 
 
 def main():
     time_window_list = ['两年', '一年', '半年']
-    test_model = 0
+    test_model = 3
     for item in time_window_list:
         config = set_hyperparameter(full_event_test=True, time_window=item)
         if test_model == 0:
-            hawkes_attention_test(config, cell_type='rnn_dropout', keep_rate=0.6, num_hidden=200)
+            fuse_hawkes_rnn_test(config)
         elif test_model == 1:
-            rnn_self_attention_test(config, cell_type='rnn_dropout', keep_rate=0.6, num_hidden=20)
+            fuse_time_rnn_test(config)
         elif test_model == 2:
-            rnn_dropout_test(config, keep_rate=0.6, num_hidden=20)
+            vanilla_rnn_test(config)
         elif test_model == 3:
-            rnn_regularization_test(config, keep_rate=1, num_hidden=200)
+            time_rnn_test(config)
         elif test_model == 4:
-            rnn_vanilla_attention_test(config, cell_type='rnn_dropout', keep_rate=0.6, num_hidden=20)
+            hawkes_rnn_test(config)
 
 
 if __name__ == '__main__':
