@@ -279,7 +279,7 @@ class ContextualGRUCellFuseHawkes(object):
         base_intensity = self.__base_intensity
         mutual_intensity = self.__mutual_intensity
 
-        with tf.variable_scope('CGRU_Fuse_Time_Parameter', reuse=tf.AUTO_REUSE):
+        with tf.variable_scope('CGRU_Fuse_Hawkes_Parameter', reuse=tf.AUTO_REUSE):
             # 最后加的1是时间维度的映射
             weight_z = tf.get_variable('w_z', [num_hidden, input_length+num_hidden+1], initializer=weight_initializer)
             weight_r = tf.get_variable('w_r', [num_hidden, input_length+num_hidden+1], initializer=weight_initializer)
@@ -288,7 +288,7 @@ class ContextualGRUCellFuseHawkes(object):
             bias_r = tf.get_variable('b_r', [num_hidden, 1], initializer=bias_initializer)
             bias_g = tf.get_variable('b_t', [num_hidden, 1], initializer=bias_initializer)
 
-        with tf.name_scope('CGRU_Fuse_Time_Cell'):
+        with tf.name_scope('CGRU_Fuse_Hawkes_Cell'):
             with tf.name_scope('get_time_intensity'):
                 event_list = tf.slice(input_x, [0, 0], [-1, event_count])
 
@@ -303,8 +303,8 @@ class ContextualGRUCellFuseHawkes(object):
                 # 基于上述强度指导三个权重的分配
                 time_interval = tf.expand_dims(time_interval, axis=1)
                 time_intensity = tf.exp(-omega * time_interval)
-                hawkes_intensity = tf.transpose(time_intensity * mutual_intensity + base_intensity[task_index])
-            with tf.name_scope('CGRU_Fuse_Time_Internal'):
+                hawkes_intensity = time_intensity * mutual_intensity + base_intensity[task_index]
+            with tf.name_scope('CGRU_Fuse_Hawkes_Internal'):
                 concat_1 = tf.transpose(tf.concat([input_x, prev_hidden_state, hawkes_intensity], axis=1))
                 z_t = tf.transpose(tf.sigmoid(tf.matmul(weight_z, concat_1) + bias_z))
                 r_t = tf.transpose(tf.sigmoid(tf.matmul(weight_r, concat_1) + bias_r))

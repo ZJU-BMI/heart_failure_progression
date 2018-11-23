@@ -2,11 +2,12 @@
 import csv
 import os
 from itertools import islice
-import numpy as np, scipy.stats as st
+import numpy as np
+import scipy.stats as st
 
 
 def main():
-    file_path = os.path.abspath('..\\..\\resource\\prediction_result\\非时序基线模型结果.csv')
+    file_path = os.path.abspath('..\\..\\..\\resource\\prediction_result\\非时序基线模型结果.csv')
     result_source_dict = dict()
     with open(file_path, 'r', encoding='gbk', newline='') as file:
         csv_reader = csv.reader(file)
@@ -38,7 +39,7 @@ def main():
             ci = mean-ci[0]
             result_stat_dict[event][method] = [mean, ci]
 
-    file_path = os.path.abspath('..\\..\\resource\\prediction_result\\非时序基线模型统计.csv')
+    file_path = os.path.abspath('..\\..\\..\\resource\\prediction_result\\非时序基线模型统计.csv')
     head = ['event', 'method', 'auc_mean', 'auc_ci']
     data_to_write = list()
     data_to_write.append(head)

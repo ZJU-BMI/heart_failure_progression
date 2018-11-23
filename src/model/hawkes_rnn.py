@@ -55,7 +55,7 @@ def hawkes_rnn_model(num_steps, num_hidden, num_feature, keep_rate, event_count=
             phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
             task_type = tf.placeholder(tf.int32, shape=[], name="task_type")
             mutual_intensity = tf.placeholder(tf.float32, shape=[event_count, event_count], name="mutual_intensity")
-            base_intensity = tf.placeholder(tf.float32, shape=[event_count], name="base_intensity")
+            base_intensity = tf.placeholder(tf.float32, shape=[event_count, 1], name="base_intensity")
             time_interval = tf.placeholder(tf.float32, shape=[None, num_steps], name="time_interval")
 
         with tf.name_scope('rnn'):
