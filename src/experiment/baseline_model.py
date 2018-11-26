@@ -198,6 +198,13 @@ def main():
     label_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_标签.csv')
     feature_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
     output_dict = read_data(feature_path, label_path)
+    time_window = ['三月']
+    event_order = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术',
+                   '死亡', '肺病', '肾病入院', '癌症']
+    valid_event_set = set()
+    for item_1 in time_window:
+        for item_2 in event_order:
+            valid_event_set.add(item_1+item_2)
 
     result_list = list()
 
@@ -228,6 +235,8 @@ def main():
 
             # 训练
             for key in train_label_dict:
+                if not valid_event_set.__contains__(key):
+                    continue
                 svm_result = svm(train_feature, train_label_dict[key], test_feature, test_label_dict[key])
                 auc, acc, pre, recall, f1 = svm_result
                 result_list.append([repeat, i, 'svm', key, auc, acc, pre, recall, f1])

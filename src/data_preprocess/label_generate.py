@@ -59,8 +59,10 @@ def generate_label(data_dict, save_path,):
                               '心功能2级': 0, '心功能3级': 0, '心功能4级': 0, '再血管化手术': 0, '死亡': 0}
             two_year_label = {'其它': 0, '肾病入院': 0, '糖尿病入院': 0, '癌症': 0, '肺病': 0, '心功能1级': 0,
                               '心功能2级': 0, '心功能3级': 0, '心功能4级': 0, '再血管化手术': 0, '死亡': 0}
-            label_dict[patient_id].append([visit_id_int, time_interval, event, half_year_label, one_year_label,
-                                           two_year_label])
+            three_month_label = {'其它': 0, '肾病入院': 0, '糖尿病入院': 0, '癌症': 0, '肺病': 0, '心功能1级': 0,
+                                 '心功能2级': 0, '心功能3级': 0, '心功能4级': 0, '再血管化手术': 0, '死亡': 0}
+            label_dict[patient_id].append([visit_id_int, time_interval, event, three_month_label, half_year_label,
+                                           one_year_label, two_year_label])
 
     # 按照入院id号对数据排序
     for patient_id in label_dict:
@@ -71,6 +73,16 @@ def generate_label(data_dict, save_path,):
     # 同样的道理应用于两年内入院
     for patient_id in label_dict:
         for i in range(0, len(label_dict[patient_id])-1):
+            # 三个月统计
+            for j in range(i+1, len(label_dict[patient_id])):
+                event = label_dict[patient_id][j][2]
+                time_interval = label_dict[patient_id][j][1] - label_dict[patient_id][i][1]
+                if time_interval > 90:
+                    continue
+                for key in event:
+                    if event[key] == 1:
+                        label_dict[patient_id][i][3][key] = 1
+
             # 半年统计
             for j in range(i+1, len(label_dict[patient_id])):
                 event = label_dict[patient_id][j][2]
@@ -79,7 +91,7 @@ def generate_label(data_dict, save_path,):
                     continue
                 for key in event:
                     if event[key] == 1:
-                        label_dict[patient_id][i][3][key] = 1
+                        label_dict[patient_id][i][4][key] = 1
 
             # 一年统计
             for j in range(i+1, len(label_dict[patient_id])):
@@ -89,7 +101,7 @@ def generate_label(data_dict, save_path,):
                     continue
                 for key in event:
                     if event[key] == 1:
-                        label_dict[patient_id][i][4][key] = 1
+                        label_dict[patient_id][i][5][key] = 1
 
             # 两年统计
             for j in range(i+1, len(label_dict[patient_id])):
@@ -99,25 +111,33 @@ def generate_label(data_dict, save_path,):
                     continue
                 for key in event:
                     if event[key] == 1:
-                        label_dict[patient_id][i][5][key] = 1
+                        label_dict[patient_id][i][6][key] = 1
 
     data_to_write = list()
     head = ['patient_id', 'visit_id']
     for patient_id in label_dict:
         for key in label_dict[patient_id][0][2]:
-            head.append('半年'+key)
-            head.append('一年'+key)
-            head.append('两年'+key)
+            head.append('三月' + key)
+        for key in label_dict[patient_id][0][2]:
+            head.append('半年' + key)
+
+        for key in label_dict[patient_id][0][2]:
+            head.append('一年' + key)
+        for key in label_dict[patient_id][0][2]:
+            head.append('两年' + key)
         break
     data_to_write.append(head)
     for patient_id in label_dict:
         for item in label_dict[patient_id]:
             visit_id = item[0]
-            half_year_event = item[3]
-            one_year_event = item[4]
-            two_year_event = item[5]
+            three_month_event = item[3]
+            half_year_event = item[4]
+            one_year_event = item[5]
+            two_year_event = item[6]
             row = [patient_id, visit_id]
-            for key in one_year_event:
+            for key in three_month_event:
+                row.append(three_month_event[key])
+            for key in half_year_event:
                 row.append(half_year_event[key])
             for key in one_year_event:
                 row.append(one_year_event[key])

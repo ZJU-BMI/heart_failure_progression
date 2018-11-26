@@ -31,7 +31,10 @@ def __fuse_hawkes_rnn(num_steps, num_hidden, num_feature, x_placeholder, batch_s
     state = zero_state
 
     for i in range(num_steps):
-        state = rnn_cell(x_unstack[i], state, task_type, time_interval[i])
+        if i == 0:
+            state = rnn_cell(x_unstack[i], x_unstack[i], state, task_type, time_interval[i])
+        else:
+            state = rnn_cell(x_unstack[i], x_unstack[i-1], state, task_type, time_interval[i])
         output_list.append(state)
     return output_list
 

@@ -118,7 +118,7 @@ class DataSource(object):
         # 构建event列表
         label_candidate = ['其它', '再血管化手术', '心功能1级', '心功能2级', '心功能3级', '心功能4级', '死亡', '癌症',
                            '糖尿病入院', '肺病', '肾病入院']
-        time_candidate = ['半年', '一年', '两年']
+        time_candidate = ['三月', '半年', '一年', '两年']
         event_list = list()
         for item_1 in label_candidate:
             for item_2 in time_candidate:

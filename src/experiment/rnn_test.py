@@ -391,7 +391,7 @@ def set_hyperparameter(time_window, full_event_test=False):
 
 
 def main():
-    time_window_list = ['两年', '一年', '半年']
+    time_window_list = ['三月', '一年']
     test_model = 4
     for item in time_window_list:
         config = set_hyperparameter(full_event_test=True, time_window=item)

@@ -87,10 +87,11 @@ class ContextualGRUHawkes(object):
         self.__base_intensity = base_intensity
         self.__mutual_intensity = mutual_intensity
 
-    def __call__(self, input_x, prev_hidden_state,  task_index, time_interval):
+    def __call__(self, input_x, previous_input, prev_hidden_state,  task_index, time_interval):
         """
         :param input_x: BD format, D implies input length
         :param prev_hidden_state:
+        :param previous_input:
         :param time_interval: 本次入院距离上次入院的时间长度，若为第一次入院，则置0
         :param task_index: 当前预测事件所对应的index，这一index需全局统一
 
@@ -107,7 +108,7 @@ class ContextualGRUHawkes(object):
 
         with tf.name_scope('CGRUHawkes_Cell'):
             with tf.name_scope('get_intensity'):
-                event_list = tf.slice(input_x, [0, 0], [-1, event_count])
+                event_list = tf.slice(previous_input, [0, 0], [-1, event_count])
 
                 # 获取互激发矩阵强度
                 # 互激发矩阵中的元素e_ij指代第j类事件激发第i类事件的强度
@@ -262,11 +263,12 @@ class ContextualGRUCellFuseHawkes(object):
         self.__event_count = event_count
         self.__omega = omega
 
-    def __call__(self, input_x, prev_hidden_state, task_index, time_interval):
+    def __call__(self, input_x, previous_input, prev_hidden_state, task_index, time_interval):
         """
         :param input_x: BD format
         :param prev_hidden_state:
         :param time_interval:
+        :param previous_input:
         :param task_index:
         :return: new hidden state: BD format, D implies num hidden unit
         """
@@ -290,7 +292,7 @@ class ContextualGRUCellFuseHawkes(object):
 
         with tf.name_scope('CGRU_Fuse_Hawkes_Cell'):
             with tf.name_scope('get_time_intensity'):
-                event_list = tf.slice(input_x, [0, 0], [-1, event_count])
+                event_list = tf.slice(previous_input, [0, 0], [-1, event_count])
 
                 # 获取互激发矩阵强度
                 # 互激发矩阵中的元素e_ij指代第j类事件激发第i类事件的强度
@@ -361,7 +363,7 @@ def unit_test():
         for i in range(num_steps):
             # Contextual GRU Hawkes Only
             state = b_cell(input_x=x_unstack[i], prev_hidden_state=state, task_index=task_index,
-                           time_interval=time_unstack[i])
+                           time_interval=time_unstack[i], previous_input=x_unstack[i])
             state_list.append(state)
 
     elif test_cell_type == 2:
@@ -394,7 +396,7 @@ def unit_test():
         for i in range(num_steps):
             # Contextual GRU Fuse Hawkes
             state = e_cell(input_x=x_unstack[i], prev_hidden_state=state, task_index=task_index,
-                           time_interval=time_unstack[i])
+                           time_interval=time_unstack[i], previous_input=x_unstack[i])
             state_list.append(state)
 
     else:

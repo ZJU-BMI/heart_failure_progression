@@ -9,8 +9,8 @@ def main():
     root_path = os.path.abspath('..\\..\\..\\resource\\prediction_result\\')
 
     # 建立数据模板
-    model_list = ['vanilla_rnn', 'time_rnn', 'fuse_time_rnn', 'fuse_hawkes_rnn', 'hawkes_rnn']
-    time_window = ['两年', '一年', '半年']
+    model_list = ['vanilla_rnn', 'time_rnn', 'fuse_time_rnn', 'hawkes_rnn']
+    time_window = ['三月', '一年']
     event_order = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术',
                    '死亡', '肺病', '糖尿病入院', '肾病入院', '癌症']
     event_list = list()
