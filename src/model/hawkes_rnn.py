@@ -16,7 +16,7 @@ def __hawkes_rnn(rnn_cell, num_steps, x_placeholder, batch_size, base_intensity,
     :param mutual_intensity:
     :param time_interval:
     :param task_type:
-    :return:     loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
+    :return: loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
     其中 phase_indicator>0代表是测试期，<=0代表是训练期
     """
     num_hidden = rnn_cell.num_hidden
