@@ -2,11 +2,11 @@ import tensorflow as tf
 from sklearn import metrics
 import numpy as np
 from experiment.read_data import DataSource
-from model.fuse_hawkes_rnn import fuse_hawkes_rnn_model
-from model.fuse_time_rnn import fuse_time_rnn_model
-from model.time_rnn import time_rnn_model
-from model.hawkes_rnn import hawkes_rnn_model
-from model.vanilla_rnn import vanilla_rnn_model
+from deprecated.fuse_hawkes_rnn import fuse_hawkes_rnn_model
+from deprecated.fuse_time_rnn import fuse_time_rnn_model
+from deprecated.time_rnn import time_rnn_model
+from deprecated.hawkes_rnn import hawkes_rnn_model
+from deprecated.vanilla_rnn import vanilla_rnn_model
 import os
 import csv
 import datetime
@@ -202,10 +202,10 @@ def run_graph(data_source, max_step, node_list, test_step_interval, task_name, e
 
 def feed_dict_and_label(data_object, node_list, task_name, task_index, test_phase, model, mutual_intensity_value,
                         base_intensity_value):
-    event_count = len(mutual_intensity_value)
 
     if test_phase:
-        input_x, input_y = data_object.get_test_feature(), data_object.get_test_label()[task_name]
+        input_x, input_t = data_object.get_test_feature()
+        input_y = data_object.get_test_label()[task_name]
         input_y = input_y[:, np.newaxis]
         phase_value = 1
         batch_size_value = len(input_x)
@@ -215,9 +215,9 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, test_phas
                 if j == 0:
                     time_interval_value[i][j] = 0
                 else:
-                    time_interval_value[i][j] = input_x[i][j][event_count] - input_x[i][j-1][event_count]
+                    time_interval_value[i][j] = input_t[i][j] - input_t[i][j-1]
     else:
-        input_x, input_y = data_object.get_next_batch(task_name)
+        input_x, input_t, input_y = data_object.get_next_batch(task_name)
         phase_value = -1
         batch_size_value = len(input_x)
         time_interval_value = np.zeros([len(input_x), len(input_x[0])])
@@ -226,7 +226,7 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, test_phas
                 if j == 0:
                     time_interval_value[i][j] = 0
                 else:
-                    time_interval_value[i][j] = input_x[i][j][event_count] - input_x[i][j-1][event_count]
+                    time_interval_value[i][j] = input_t[i][j] - input_t[i][j-1]
     if model == 'fuse_hawkes_rnn':
         _, _, x_placeholder, y_placeholder, batch_size, phase_indicator, task_type, time_interval, mutual_intensity, \
             base_intensity, _ = node_list
@@ -284,7 +284,7 @@ def five_fold_validation_default(experiment_config, node_list, model):
 
                 # 从洗过的数据中读取数据
                 data_source = DataSource(data_folder, data_length=length, test_fold_num=j, batch_size=batch_size,
-                                         reserve_time=True, repeat=i)
+                                         repeat=i)
 
                 best_result = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
                                         test_step_interval=test_step_interval, model=model,
@@ -304,7 +304,7 @@ def five_fold_validation_default(experiment_config, node_list, model):
 
 
 def save_result(save_folder, experiment_config, result_record, task_name):
-    # 保存
+
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
 
@@ -339,20 +339,10 @@ def set_hyperparameter(time_window, full_event_test=False):
     data_folder = os.path.abspath('..\\..\\resource\\rnn_data')
     mutual_intensity_path = os.path.abspath('..\\..\\resource\\hawkes_result\\mutual.npy')
     base_intensity_path = os.path.abspath('..\\..\\resource\\hawkes_result\\base.npy')
-    """
-    Standard Hyperparameter
+
     length = 3
-    num_hidden = 4
     batch_size = 256
     num_feature = 122
-    learning_rate = 0.001
-    keep_rate = 1
-    max_iter = 2000
-    test_interval = 20
-    """
-    length = 3
-    batch_size = 256
-    num_feature = 123
     learning_rate = 0.0005
     max_iter = 20000
     test_interval = 20

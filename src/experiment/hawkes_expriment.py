@@ -1,7 +1,7 @@
 # encoding=utf-8
 import csv
 import os
-import model.hawkes_process as hawkes
+import hawkes_process as hawkes
 from itertools import islice
 import numpy as np
 import copy

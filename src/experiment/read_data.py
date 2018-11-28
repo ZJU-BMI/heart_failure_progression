@@ -5,22 +5,21 @@ import random
 
 
 class DataSource(object):
-    def __init__(self, data_folder, data_length, repeat, test_fold_num, batch_size, reserve_time=False):
+    def __init__(self, data_folder, data_length, repeat, test_fold_num, batch_size, event_count=11):
         """
         :param data_folder:
         :param data_length:
         :param test_fold_num:
         :param repeat:
         :param batch_size:
-        :param reserve_time:  入院时间差是原始数据中唯一没有，也不适合做归一化的变量，加入模型可能对模型产生不利影响
-        因此此处可以设定是否要加入时间变量
+        :param event_count:
         """
         self.__data_folder = data_folder
         self.__test_fold = test_fold_num
         self.__batch_size = batch_size
         self.__data_length = data_length
-        self.__reserve_time = reserve_time
         self.__repeat = repeat
+        self.__event_count = event_count
 
         train_feature_list, train_label_dict, test_feature_list, test_label_dict = self.__read_data()
         if batch_size >= len(train_feature_list):
@@ -37,7 +36,12 @@ class DataSource(object):
         return self.__test_label
 
     def get_test_feature(self):
-        return self.__test_feature
+        test_feature = self.__test_feature
+        event_count = self.__event_count
+        batch_time = test_feature[:, :, event_count]
+        batch_feature = np.concatenate([test_feature[:, :, 0: event_count],
+                                        test_feature[:, :, event_count+1:]], axis=2)
+        return batch_feature, batch_time
 
     def get_next_batch(self, key_name):
         batch_size = self.__batch_size
@@ -53,7 +57,12 @@ class DataSource(object):
             self.__current_batch_index = 0
         else:
             self.__current_batch_index += 1
-        return batch_feature, batch_label
+
+        event_count = self.__event_count
+        batch_time = batch_feature[:, :, event_count]
+        batch_feature = np.concatenate([batch_feature[:, :, 0: event_count],
+                                        batch_feature[:, :, event_count+1:]], axis=2)
+        return batch_feature, batch_time, batch_label
 
     def __shuffle_data(self):
         # 随机化数据的要求是，随机化不会破坏原始数据中的特征、标签之间的对应关系
@@ -80,39 +89,18 @@ class DataSource(object):
         data_folder = self.__data_folder
         repeat = self.__repeat
         train_feature_list = list()
-        test_feature_list = list()
+        test_feature_list = None
         train_label_dict = dict()
         test_label_dict = dict()
         for i in range(5):
             feature_name = 'length_{}_repeat_{}_fold_{}_feature.npy'.format(str(data_length), str(repeat), str(i))
             feature = np.load(os.path.join(data_folder, feature_name))
             if i == self.__test_fold:
-                for j in range(len(feature)):
-                    single_patient = list()
-                    for k in range(len(feature[j])):
-                        single_visit = list()
-                        for m in range(len(feature[j][k])):
-                            value = feature[j][k][m]
-                            # 跳过时间
-                            if not self.__reserve_time and m == 11:
-                                continue
-                            single_visit.append(value)
-                        single_patient.append(single_visit)
-                    test_feature_list.append(single_patient)
-                test_feature_list = np.array(test_feature_list)
+                test_feature_list = feature
                 continue
 
             for j in range(len(feature)):
-                single_patient = list()
-                for k in range(len(feature[j])):
-                    single_visit = list()
-                    for m in range(len(feature[j][k])):
-                        value = feature[j][k][m]
-                        if not self.__reserve_time and m == 11:
-                            continue
-                        single_visit.append(value)
-                    single_patient.append(single_visit)
-                train_feature_list.append(single_patient)
+                train_feature_list.append(feature[j])
         train_feature_list = np.array(train_feature_list)
 
         # 构建event列表
@@ -146,7 +134,7 @@ class DataSource(object):
         return train_feature_list, train_label_dict, test_feature_list, test_label_dict
 
 
-def main():
+def unit_test():
     data_folder = os.path.abspath('..\\..\\resource\\rnn_data')
     data_length = 3
     test_fold_num = 0
@@ -159,4 +147,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    unit_test()

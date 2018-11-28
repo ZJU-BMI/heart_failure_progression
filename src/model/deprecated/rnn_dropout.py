@@ -4,7 +4,7 @@
 # 也就是使用GRU对当前输入所做产生的隐变量g_t做随机丢弃
 # deprecated
 import tensorflow as tf
-from rnn_cell import DropContextualGRUCell
+from deprecated.rnn_cell import DropContextualGRUCell
 
 
 def drop_rnn(num_steps, num_hidden, num_feature, keep_rate, x_placeholder, phase_indicator, batch_size):

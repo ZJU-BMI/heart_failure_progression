@@ -60,8 +60,6 @@ def get_roc(label, prediction):
 def read_data(event_list, save_folder):
     result_dict = dict()
     for task in event_list:
-        if not result_dict.__contains__(task):
-            result_dict[task] = {'label': [], 'prediction': []}
         for j in range(5):
             for i in range(10):
                 label_file_name = 'task_{}_test_fold_{}_repeat_{}_label.npy'.format(task, j, i)
