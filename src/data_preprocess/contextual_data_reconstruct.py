@@ -153,7 +153,7 @@ def build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False):
                     sub_string = diagnosis_desc[pos + target_length:]
                 if sub_string.__contains__('1') or sub_string.__contains__('I') or sub_string.__contains__('i') or \
                         sub_string.__contains__('一') or sub_string.__contains__('Ⅰ'):
-                    diagnosis_dict[patient_id][visit_id]['心功能1级'] = 1 
+                    diagnosis_dict[patient_id][visit_id]['心功能1级'] = 1
                 elif sub_string.__contains__('2') or sub_string.__contains__('II') or sub_string.__contains__('ii') or \
                         sub_string.__contains__('二') or sub_string.__contains__('Ⅱ'):
                     diagnosis_dict[patient_id][visit_id]['心功能2级'] = 1
@@ -1213,7 +1213,7 @@ def get_diagnosis_info(visit_dict, data_path_dict, map_path, cache_root, read_fr
             diagnosis_type = line[2]
             diagnosis_desc = line[4]
 
-            # 只考虑出院诊断（Type 为3（出院主诊断），A（出院其它诊断）
+            # 只考虑出院诊断（Type 为3（出院主诊断），A（出院其它诊断） 
             if not (diagnosis_type == '3' or diagnosis_type == 'A'):
                 continue
             # 丢弃不匹配的数据
