@@ -153,7 +153,7 @@ def build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False):
                     sub_string = diagnosis_desc[pos + target_length:]
                 if sub_string.__contains__('1') or sub_string.__contains__('I') or sub_string.__contains__('i') or \
                         sub_string.__contains__('一') or sub_string.__contains__('Ⅰ'):
-                    diagnosis_dict[patient_id][visit_id]['心功能1级'] = 1
+                    diagnosis_dict[patient_id][visit_id]['心功能1级'] = 1 
                 elif sub_string.__contains__('2') or sub_string.__contains__('II') or sub_string.__contains__('ii') or \
                         sub_string.__contains__('二') or sub_string.__contains__('Ⅱ'):
                     diagnosis_dict[patient_id][visit_id]['心功能2级'] = 1
