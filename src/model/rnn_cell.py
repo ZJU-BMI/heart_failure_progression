@@ -2,17 +2,18 @@
 import tensorflow as tf
 
 
-class ContextualRawCell(object):
+class RawCell(object):
     """
     和标准的GRU Cell基本一致
     使用了arXiv 1603.05118 Recurrent Dropout without Memory Loss中所提及的对Hidden State的正则化策略
     """
-    def __init__(self, num_hidden, event_number, context_number, keep_prob, phase_indicator, weight_initializer,
-                 bias_initializer, activation=tf.tanh):
+    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator,
+                 weight_initializer=tf.initializers.orthogonal(),
+                 bias_initializer=tf.initializers.zeros(),
+                 activation=tf.tanh):
         """
         :param num_hidden:
-        :param event_number:
-        :param context_number:
+        :param input_length:
         :param weight_initializer:
         :param bias_initializer:
         :param phase_indicator: phase_indicator>0代表是测试期，phase_indicator<=0代表是训练期
@@ -21,8 +22,7 @@ class ContextualRawCell(object):
         self.__num_hidden = num_hidden
         self.__weight_initializer = weight_initializer
         self.__bias_initializer = bias_initializer
-        self.__event_number = event_number
-        self.__context_number = context_number
+        self.__input_length = input_length
         self.__keep_probability = keep_prob
         self.__phase_indicator = phase_indicator
         self.__variable_dict = None
@@ -30,7 +30,7 @@ class ContextualRawCell(object):
 
         self.__build()
 
-    def __call__(self, input_event, input_context, prev_hidden_state):
+    def __call__(self, input_x, recurrent_state):
         keep_probability = self.__keep_probability
         phase_indicator = self.__phase_indicator
         weight = self.__variable_dict['weight']
@@ -38,21 +38,24 @@ class ContextualRawCell(object):
         activation = self.__activation
 
         with tf.name_scope('cell_internal'):
-            concat_1 = tf.transpose(tf.concat([input_event, input_context, prev_hidden_state], axis=1))
+            concat_1 = tf.transpose(tf.concat([input_x, recurrent_state], axis=1))
             h_t = tf.transpose(activation(tf.matmul(weight, concat_1) + bias, name='hidden_state'))
-            dropped_g_t = tf.cond(phase_indicator > 0,
+            dropped_h_t = tf.cond(phase_indicator > 0,
                                   lambda: h_t,
                                   lambda: tf.nn.dropout(h_t, keep_probability))
-            return dropped_g_t
+
+        # 输出两个一模一样的结果是为了和Tensorflow保持一致
+        # 之所以Tensorflow这么输出，猜测是因为LSTM要输出Hidden State和Cell State
+        # 其它的Cell虽然没有Cell State这个设计，但是为了保证统一的编程框架，也要输出这么一个东西
+        return dropped_h_t, dropped_h_t
 
     def __build(self):
-        event_number = self.__event_number
-        context_number = self.__context_number
+        input_length = self.__input_length
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
         with tf.variable_scope('raw_rnn_cell_parameter'):
-            weight = tf.get_variable('w', [num_hidden, event_number+context_number+num_hidden],
+            weight = tf.get_variable('w', [num_hidden, input_length+num_hidden],
                                      initializer=weight_initializer)
             bias = tf.get_variable('b', [num_hidden, 1], initializer=bias_initializer)
         variable_dict = {'weight': weight, 'bias': bias}
@@ -62,14 +65,21 @@ class ContextualRawCell(object):
     def num_hidden(self):
         return self.__num_hidden
 
+    def generate_initial_state(self, batch_size, configure='zero'):
+        if configure == 'zero':
+            return tf.zeros([batch_size, self.__num_hidden])
+        else:
+            raise ValueError('')
 
-class ContextualGRUCell(object):
-    def __init__(self, num_hidden, event_number, context_number, keep_prob, phase_indicator, weight_initializer,
-                 bias_initializer, activation=tf.tanh):
+
+class GRUCell(object):
+    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator,
+                 weight_initializer=tf.initializers.orthogonal(),
+                 bias_initializer=tf.initializers.zeros(),
+                 activation=tf.tanh):
         """
         :param num_hidden:
-        :param event_number:
-        :param context_number:
+        :param input_length:
         :param weight_initializer:
         :param bias_initializer:
         :param phase_indicator: phase_indicator>0代表是测试期，phase_indicator<=0代表是训练期
@@ -78,8 +88,7 @@ class ContextualGRUCell(object):
         self.__num_hidden = num_hidden
         self.__weight_initializer = weight_initializer
         self.__bias_initializer = bias_initializer
-        self.__event_number = event_number
-        self.__context_number = context_number
+        self.__input_length = input_length
         self.__keep_probability = keep_prob
         self.__phase_indicator = phase_indicator
         self.__variable_dict = None
@@ -87,11 +96,10 @@ class ContextualGRUCell(object):
 
         self.__build()
 
-    def __call__(self, input_event, input_context, prev_hidden_state):
+    def __call__(self, input_x, recurrent_state):
         """
-        :param input_event: BTD format
-        :param input_context: BTD format
-        :param prev_hidden_state:
+        :param input_x: BTD format
+        :param recurrent_state:
         :return: new hidden state: BD format
         """
         keep_probability = self.__keep_probability
@@ -107,32 +115,31 @@ class ContextualGRUCell(object):
         bias_g = variable_dict['bias_g']
 
         with tf.name_scope('CGRU_Internal'):
-            concat_1 = tf.transpose(tf.concat([input_event, input_context, prev_hidden_state], axis=1))
+            concat_1 = tf.transpose(tf.concat([input_x, recurrent_state], axis=1))
             z_t = tf.transpose(tf.sigmoid(tf.matmul(weight_z, concat_1) + bias_z))
             r_t = tf.transpose(tf.sigmoid(tf.matmul(weight_r, concat_1) + bias_r))
 
-            concat_2 = tf.transpose(tf.concat([input_event, input_context, r_t*prev_hidden_state], axis=1))
+            concat_2 = tf.transpose(tf.concat([input_x, r_t*recurrent_state], axis=1))
             g_t = tf.transpose(activation(tf.matmul(weight_g, concat_2) + bias_g))
 
             dropped_g_t = tf.cond(phase_indicator > 0,
                                   lambda: g_t,
                                   lambda: tf.nn.dropout(g_t, keep_probability))
 
-            new_state = (1 - z_t) * prev_hidden_state + z_t * dropped_g_t
-        return new_state
+            new_state = (1 - z_t) * recurrent_state + z_t * dropped_g_t
+        return new_state, new_state
 
     def __build(self):
-        event_number = self.__event_number
-        context_number = self.__context_number
+        input_length = self.__input_length
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
         with tf.variable_scope('parameter'):
-            weight_z = tf.get_variable('w_z', [num_hidden, event_number+context_number+num_hidden],
+            weight_z = tf.get_variable('w_z', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
-            weight_r = tf.get_variable('w_r', [num_hidden, event_number+context_number+num_hidden],
+            weight_r = tf.get_variable('w_r', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
-            weight_g = tf.get_variable('w_t', [num_hidden, event_number+context_number+num_hidden],
+            weight_g = tf.get_variable('w_t', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
             bias_z = tf.get_variable('b_z', [num_hidden, 1], initializer=bias_initializer)
             bias_r = tf.get_variable('b_r', [num_hidden, 1], initializer=bias_initializer)
@@ -145,14 +152,21 @@ class ContextualGRUCell(object):
     def num_hidden(self):
         return self.__num_hidden
 
+    def generate_initial_state(self, batch_size, configure='zero'):
+        if configure == 'zero':
+            return tf.zeros([batch_size, self.__num_hidden])
+        else:
+            raise ValueError('')
 
-class ContextualLSTMCell(object):
-    def __init__(self, num_hidden, event_number, context_number, keep_prob, phase_indicator, weight_initializer,
-                 bias_initializer, activation=tf.tanh):
+
+class LSTMCell(object):
+    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator,
+                 weight_initializer=tf.initializers.orthogonal(),
+                 bias_initializer=tf.initializers.zeros(),
+                 activation=tf.tanh):
         """
         :param num_hidden:
-        :param event_number:
-        :param context_number:
+        :param input_length:
         :param weight_initializer:
         :param bias_initializer:
         :param phase_indicator: phase_indicator>0代表是测试期，phase_indicator<=0代表是训练期
@@ -161,8 +175,7 @@ class ContextualLSTMCell(object):
         self.__num_hidden = num_hidden
         self.__weight_initializer = weight_initializer
         self.__bias_initializer = bias_initializer
-        self.__event_number = event_number
-        self.__context_number = context_number
+        self.__input_length = input_length
         self.__keep_probability = keep_prob
         self.__phase_indicator = phase_indicator
         self.__variable_dict = None
@@ -170,12 +183,9 @@ class ContextualLSTMCell(object):
 
         self.__build()
 
-    def __call__(self, input_event, input_context, prev_hidden_state, prev_cell_state):
+    def __call__(self, input_x, recurrent_state):
         """
-        :param input_event: BTD format
-        :param input_context: BTD format
-        :param prev_cell_state:
-        :param prev_hidden_state:
+        :param input_x: BTD format
         :return: new hidden state: BD format
         """
         keep_probability = self.__keep_probability
@@ -191,8 +201,9 @@ class ContextualLSTMCell(object):
         bias_o = variable_dict['bias_o']
         bias_c = variable_dict['bias_c']
 
+        prev_hidden_state, prev_cell_state = tf.split(recurrent_state, 2, axis=1)
         with tf.name_scope('CLSTM_Internal'):
-            concat_1 = tf.transpose(tf.concat([input_event, input_context, prev_hidden_state], axis=1))
+            concat_1 = tf.transpose(tf.concat([input_x, prev_hidden_state], axis=1))
             f_t = tf.transpose(tf.sigmoid(tf.matmul(weight_f, concat_1) + bias_f))
             i_t = tf.transpose(tf.sigmoid(tf.matmul(weight_i, concat_1) + bias_i))
             o_t = tf.transpose(tf.sigmoid(tf.matmul(weight_o, concat_1) + bias_o))
@@ -204,22 +215,23 @@ class ContextualLSTMCell(object):
 
             c_t = f_t*prev_cell_state + i_t*dropped_g_t
             h_t = o_t * self.__activation(c_t)
-        return h_t, c_t
+
+            recurrent_state = tf.concat((h_t, c_t), axis=1)
+        return h_t, recurrent_state
 
     def __build(self):
-        event_number = self.__event_number
-        context_number = self.__context_number
+        input_length = self.__input_length
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
         with tf.variable_scope('parameter'):
-            weight_f = tf.get_variable('w_f', [num_hidden, context_number+event_number+num_hidden],
+            weight_f = tf.get_variable('w_f', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
-            weight_i = tf.get_variable('w_i', [num_hidden, context_number+event_number+num_hidden],
+            weight_i = tf.get_variable('w_i', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
-            weight_o = tf.get_variable('w_o', [num_hidden, context_number+event_number+num_hidden],
+            weight_o = tf.get_variable('w_o', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
-            weight_c = tf.get_variable('w_c', [num_hidden, context_number+event_number+num_hidden],
+            weight_c = tf.get_variable('w_c', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
             bias_f = tf.get_variable('b_f', [num_hidden, 1], initializer=bias_initializer)
             bias_i = tf.get_variable('b_i', [num_hidden, 1], initializer=bias_initializer)
@@ -233,6 +245,12 @@ class ContextualLSTMCell(object):
     def num_hidden(self):
         return self.__num_hidden
 
+    def generate_initial_state(self, batch_size, configure='zero'):
+        if configure == 'zero':
+            return tf.zeros([batch_size, self.__num_hidden*2])
+        else:
+            raise ValueError('')
+
 
 def unit_test():
     """
@@ -242,56 +260,46 @@ def unit_test():
     batch_size = tf.placeholder(tf.int32, [], name='batch_size')
     num_hidden = 10
     num_steps = 20
-    event_number = 25
-    context_number = 30
+    input_length = 25
     keep_prob = 1.0
     zero_state = tf.zeros([batch_size, num_hidden])
     initializer_o = tf.initializers.orthogonal()
     initializer_z = tf.initializers.zeros()
 
     # input should be BTD format
-    event_input = tf.placeholder(tf.float32, [None, num_steps, event_number], name='event_input')
-    context_input = tf.placeholder(tf.float32, [None, num_steps, context_number], name='context_input')
+    input_x = tf.placeholder(tf.float32, [None, num_steps, input_length], name='event_input')
     phase_indicator = tf.placeholder(tf.int32, [], name='phase_indicator')
 
     # 试验阶段
-    test_cell_type = 2
-    event_input_item = tf.unstack(event_input, axis=1)
-    context_input_item = tf.unstack(context_input, axis=1)
+    test_cell_type = 0
+    input_x_list = tf.unstack(input_x, axis=1)
     if test_cell_type == 0:
-        a_cell = ContextualGRUCell(num_hidden=num_hidden, context_number=context_number, event_number=event_number,
-                                   weight_initializer=initializer_o, bias_initializer=initializer_z,
-                                   keep_prob=keep_prob, phase_indicator=phase_indicator)
-        state = zero_state
+        a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
+                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+        recurrent_state = zero_state
         state_list = list()
         for i in range(num_steps):
-            # Contextual GRU Cell
-            state = a_cell(input_event=event_input_item[i], input_context=context_input_item[i],
-                           prev_hidden_state=state)
-            state_list.append(state)
+            output_state, recurrent_state = a_cell(input_x=input_x_list[i], recurrent_state=recurrent_state)
+            state_list.append(output_state)
     elif test_cell_type == 1:
-        b_cell = ContextualRawCell(num_hidden=num_hidden,  weight_initializer=initializer_o,
-                                   bias_initializer=initializer_z, keep_prob=keep_prob, event_number=event_number,
-                                   phase_indicator=phase_indicator, context_number=context_number)
-        state = zero_state
+        b_cell = RawCell(num_hidden=num_hidden,  weight_initializer=initializer_o, bias_initializer=initializer_z,
+                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
+        recurrent_state = zero_state
         state_list = list()
         for i in range(num_steps):
-            # Contextual GRU Hawkes Only
-            state = b_cell(input_event=event_input_item[i], input_context=context_input_item[i],
-                           prev_hidden_state=state)
-            state_list.append(state)
+            output_state, recurrent_state = b_cell(input_x=input_x_list[i], recurrent_state=recurrent_state)
+            state_list.append(output_state)
 
     elif test_cell_type == 2:
-        c_cell = ContextualLSTMCell(num_hidden=num_hidden, context_number=context_number, event_number=event_number,
-                                    weight_initializer=initializer_o, bias_initializer=initializer_z,
-                                    keep_prob=keep_prob, phase_indicator=phase_indicator)
+        c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length,weight_initializer=initializer_o,
+                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
         hidden_state = zero_state
         context_state = tf.zeros([batch_size, num_hidden])
+        recurrent_state = tf.concat([hidden_state, context_state], axis=1)
         state_list = list()
         for i in range(num_steps):
-            hidden_state, context_state = c_cell(input_event=event_input_item[i], input_context=context_input_item[i],
-                                                 prev_hidden_state=hidden_state, prev_cell_state=context_state)
-            state_list.append(hidden_state)
+            output_state, recurrent_state = c_cell(input_x=input_x_list[i], recurrent_state=recurrent_state)
+            state_list.append(output_state)
     else:
         print('No Cell Test')
     print('finish')

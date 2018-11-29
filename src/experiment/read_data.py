@@ -5,32 +5,46 @@ import random
 
 
 class DataSource(object):
-    def __init__(self, data_folder, data_length, repeat, test_fold_num, batch_size, event_count=11):
+    def __init__(self, data_folder, data_length, repeat, validate_fold_num, batch_size, event_count=11):
         """
         :param data_folder:
         :param data_length:
-        :param test_fold_num:
+        :param validate_fold_num:
         :param repeat:
         :param batch_size:
         :param event_count:
         """
         self.__data_folder = data_folder
-        self.__test_fold = test_fold_num
+        self.__validate_fold_num = validate_fold_num
         self.__batch_size = batch_size
         self.__data_length = data_length
         self.__repeat = repeat
         self.__event_count = event_count
 
-        train_feature_list, train_label_dict, test_feature_list, test_label_dict = self.__read_data()
+        train_feature_list, train_label_dict, test_feature_list, test_label_dict, validation_feature_list, \
+            validation_label_dict = self.__read_data()
         if batch_size >= len(train_feature_list):
             raise ValueError("Batch Size Too Large")
         self.__test_feature = test_feature_list
         self.__test_label = test_label_dict
+        self.__validation_feature = validation_feature_list
+        self.__validation_label = validation_label_dict
         self.__raw_train_feature = train_feature_list
         self.__raw_train_label = train_label_dict
         self.__shuffled_train_feature, self.__shuffled_train_label = self.__shuffle_data()
 
         self.__current_batch_index = 0
+
+    def get_validation_label(self):
+        return self.__validation_label
+
+    def get_validation_feature(self):
+        validation_feature = self.__validation_feature
+        event_count = self.__event_count
+        validation_time = validation_feature[:, :, event_count]
+        validation_event = validation_feature[:, :, 0: event_count]
+        validation_context = validation_feature[:, :, event_count+1:]
+        return validation_event, validation_context, validation_time
 
     def get_test_label(self):
         return self.__test_label
@@ -38,10 +52,10 @@ class DataSource(object):
     def get_test_feature(self):
         test_feature = self.__test_feature
         event_count = self.__event_count
-        batch_time = test_feature[:, :, event_count]
-        batch_feature = np.concatenate([test_feature[:, :, 0: event_count],
-                                        test_feature[:, :, event_count+1:]], axis=2)
-        return batch_feature, batch_time
+        test_time = test_feature[:, :, event_count]
+        test_event = test_feature[:, :, 0: event_count]
+        test_context = test_feature[:, :, event_count+1:]
+        return test_event, test_context, test_time
 
     def get_next_batch(self, key_name):
         batch_size = self.__batch_size
@@ -60,9 +74,9 @@ class DataSource(object):
 
         event_count = self.__event_count
         batch_time = batch_feature[:, :, event_count]
-        batch_feature = np.concatenate([batch_feature[:, :, 0: event_count],
-                                        batch_feature[:, :, event_count+1:]], axis=2)
-        return batch_feature, batch_time, batch_label
+        batch_event = batch_feature[:, :, 0: event_count]
+        batch_context = batch_feature[:, :, event_count+1:]
+        return batch_event, batch_context, batch_time, batch_label
 
     def __shuffle_data(self):
         # 随机化数据的要求是，随机化不会破坏原始数据中的特征、标签之间的对应关系
@@ -89,14 +103,15 @@ class DataSource(object):
         data_folder = self.__data_folder
         repeat = self.__repeat
         train_feature_list = list()
-        test_feature_list = None
+        validation_feature_list = None
         train_label_dict = dict()
-        test_label_dict = dict()
+
+        validation_label_dict = dict()
         for i in range(5):
             feature_name = 'length_{}_repeat_{}_fold_{}_feature.npy'.format(str(data_length), str(repeat), str(i))
             feature = np.load(os.path.join(data_folder, feature_name))
-            if i == self.__test_fold:
-                test_feature_list = feature
+            if i == self.__validate_fold_num:
+                validation_feature_list = feature
                 continue
 
             for j in range(len(feature)):
@@ -115,23 +130,33 @@ class DataSource(object):
         for key_name in event_list:
             if not train_label_dict.__contains__(key_name):
                 train_label_dict[key_name] = list()
-            if not test_label_dict.__contains__(key_name):
-                test_label_dict[key_name] = list()
+            if not validation_label_dict.__contains__(key_name):
+                validation_label_dict[key_name] = list()
             for i in range(5):
                 label_name = 'length_{}_repeat_{}_fold_{}_{}_label.npy'.format(
                     str(data_length), str(repeat), str(i), key_name)
                 label = np.load(os.path.join(data_folder, label_name))
-                if i == self.__test_fold:
+                if i == self.__validate_fold_num:
                     for item in label:
-                        test_label_dict[key_name].append(item)
-                    test_label_dict[key_name] = np.array(test_label_dict[key_name])
+                        validation_label_dict[key_name].append(item)
+                    validation_label_dict[key_name] = np.array(validation_label_dict[key_name])
                     continue
 
                 for item in label:
                     train_label_dict[key_name].append(item)
             train_label_dict[key_name] = np.array(train_label_dict[key_name])
 
-        return train_feature_list, train_label_dict, test_feature_list, test_label_dict
+        # read test data
+        feature_name = 'length_{}_test_feature.npy'.format(str(data_length))
+        test_feature_list = np.load(os.path.join(data_folder, feature_name))
+        test_label_dict = dict()
+        for key_name in event_list:
+            test_label_dict[key_name] = list()
+            label_name = 'length_{}_test_{}_label.npy'.format(str(data_length), key_name)
+            label = np.load(os.path.join(data_folder, label_name))
+            test_label_dict[key_name] = label
+        return train_feature_list, train_label_dict, test_feature_list, test_label_dict, validation_feature_list, \
+            validation_label_dict
 
 
 def unit_test():

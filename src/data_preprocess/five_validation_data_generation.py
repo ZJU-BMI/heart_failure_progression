@@ -83,7 +83,7 @@ def read_label(label_path):
     return label_dict
 
 
-def five_fold_generate(feature_path, label_path, data_length):
+def six_fold_generate(feature_path, label_path, data_length):
     label_dict = read_label(label_path)
     feature_dict = read_feature(feature_path)
     raw_data = data_filter(feature_dict, label_dict, data_length)
@@ -103,9 +103,9 @@ def five_fold_generate(feature_path, label_path, data_length):
                 label_dict[key] = list()
             label_dict[key].append(item[1][key])
 
-    fold_size = len(feature_list) // 5
+    fold_size = len(feature_list) // 6
     fold_list = list()
-    for i in range(5):
+    for i in range(6):
         fold_feature = feature_list[i * fold_size: (i + 1) * fold_size]
         single_fold_label = dict()
         for key in label_dict:
@@ -128,18 +128,29 @@ def main(data_length):
     save_root = os.path.abspath('..\\..\\resource\\rnn_data\\')
 
     for j in range(10):
-        fold_list = five_fold_generate(feature_path, label_path, data_length)
-        for i in range(5):
-            feature = fold_list[i][0]
-            feature_np = np.array(feature, dtype=np.float64)
-            single_feature_path = 'length_{}_repeat_{}_fold_{}_feature.npy'.format(str(data_length), str(j), str(i))
-            np.save(os.path.join(save_root, single_feature_path), feature_np)
-            label = fold_list[i][1]
-            for key in label:
-                single_label_path = 'length_{}_repeat_{}_fold_{}_{}_label.npy'.format(str(data_length), str(j),
-                                                                                      str(i), key)
-                label_np = np.array(label[key], dtype=np.float64)
-                np.save(os.path.join(save_root, single_label_path), label_np)
+        fold_list = six_fold_generate(feature_path, label_path, data_length)
+        for i in range(6):
+            if i != 5:
+                feature = fold_list[i][0]
+                feature_np = np.array(feature, dtype=np.float64)
+                single_feature_path = 'length_{}_repeat_{}_fold_{}_feature.npy'.format(str(data_length), str(j), str(i))
+                np.save(os.path.join(save_root, single_feature_path), feature_np)
+                label = fold_list[i][1]
+                for key in label:
+                    single_label_path = 'length_{}_repeat_{}_fold_{}_{}_label.npy'.format(str(data_length), str(j),
+                                                                                          str(i), key)
+                    label_np = np.array(label[key], dtype=np.float64)
+                    np.save(os.path.join(save_root, single_label_path), label_np)
+            else:
+                feature = fold_list[i][0]
+                feature_np = np.array(feature, dtype=np.float64)
+                single_feature_path = 'length_{}_test_feature.npy'.format(str(data_length))
+                np.save(os.path.join(save_root, single_feature_path), feature_np)
+                label = fold_list[i][1]
+                for key in label:
+                    single_label_path = 'length_{}_test_{}_label.npy'.format(str(data_length), key)
+                    label_np = np.array(label[key], dtype=np.float64)
+                    np.save(os.path.join(save_root, single_label_path), label_np)
 
 
 if __name__ == '__main__':

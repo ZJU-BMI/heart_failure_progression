@@ -21,17 +21,17 @@ def main():
         data_path_dict[item] = os.path.join(data_root, item+'.csv')
     cache_root = os.path.abspath('..\\..\\resource\\cache')
 
-    visit_dict = get_valid_visit(data_path_dict, cache_root, read_from_cache=True)
-    visit_info_dict = get_visit_info(visit_dict, data_path_dict, cache_root, read_from_cache=True)
-    procedure_dict = get_procedure(visit_dict, data_path_dict, operation_map_path, cache_root, read_from_cache=True)
+    visit_dict = get_valid_visit(data_path_dict, cache_root, read_from_cache=False)
+    visit_info_dict = get_visit_info(visit_dict, data_path_dict, cache_root, read_from_cache=False)
+    procedure_dict = get_procedure(visit_dict, data_path_dict, operation_map_path, cache_root, read_from_cache=False)
     exam_dict = get_echocardiogram(visit_dict, data_path_dict, ehcocardiogram_map_path, cache_root,
-                                   read_from_cache=True)
-    sex_dict, age_dict = get_demographic_info(visit_dict, data_path_dict, cache_root, read_from_cache=True)
-    medical_dict = get_medical_info(visit_dict, data_path_dict, drug_map_path, cache_root, read_from_cache=True)
+                                   read_from_cache=False)
+    sex_dict, age_dict = get_demographic_info(visit_dict, data_path_dict, cache_root, read_from_cache=False)
+    medical_dict = get_medical_info(visit_dict, data_path_dict, drug_map_path, cache_root, read_from_cache=False)
     diagnosis_dict = get_diagnosis_info(visit_dict, data_path_dict, diagnosis_map_path, cache_root,
-                                        read_from_cache=True)
-    vital_sign_dict = get_vital_sign(visit_dict, data_path_dict, cache_root, read_from_cache=True)
-    event_dict = build_event(data_path_dict, visit_dict, cache_root, read_from_cache=True)
+                                        read_from_cache=False)
+    vital_sign_dict = get_vital_sign(visit_dict, data_path_dict, cache_root, read_from_cache=False)
+    event_dict = build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False)
     lab_test_dict = get_lab_test_info(visit_dict, data_path_dict, lab_test_list_path, cache_root, read_from_cache=False)
     egfr_dict = get_egfr(visit_dict, sex_dict, age_dict, lab_test_dict)
 

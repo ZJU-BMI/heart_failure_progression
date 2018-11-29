@@ -1,16 +1,17 @@
 # encoding=utf-8-sig
 import tensorflow as tf
-from rnn_cell import ContextualGRUCell
-from rnn_cell import ContextualLSTMCell
-from rnn_cell import ContextualRawCell
+from rnn_cell import GRUCell
+from rnn_cell import LSTMCell
+from rnn_cell import RawCell
+import autoencoder
 
 
-def __hawkes_rnn(rnn_cell, num_steps, x_placeholder, batch_size, base_intensity, event_list,
-                 mutual_intensity, task_type, time_interval, markov_assumption):
+def __hawkes_rnn(rnn_cell, input_x, event_list, batch_size, base_intensity,  mutual_intensity, task_type,
+                 time_interval, markov_assumption, initializer=tf.initializers.random_normal()):
     """
-    :param num_steps:
     :param rnn_cell:
-    :param x_placeholder:
+    :param input_x:
+    :param event_list:
     :param batch_size:
     :param base_intensity:
     :param mutual_intensity:
@@ -19,34 +20,88 @@ def __hawkes_rnn(rnn_cell, num_steps, x_placeholder, batch_size, base_intensity,
     :return: loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
     其中 phase_indicator>0代表是测试期，<=0代表是训练期
     """
-    num_hidden = rnn_cell.num_hidden
-    zero_state = tf.zeros([batch_size, num_hidden])
+    input_list = tf.unstack(input_x, axis=1)
+    event_list = tf.unstack(event_list, axis=1)
+    time_interval = tf.unstack(time_interval, axis=1)
 
     output_list = list()
-    x_unstack = tf.unstack(x_placeholder, axis=1)
-    time_interval = tf.unstack(time_interval, axis=1)
-    state = zero_state
+    recurrent_state = rnn_cell.generate_initial_state(batch_size=batch_size)
 
-    for i in range(num_steps):
-        if i == 0:
-            state = rnn_cell(x_unstack[i], x_unstack[i], state, task_type, time_interval[i])
-        else:
-            state = rnn_cell(x_unstack[i], x_unstack[i-1], state, task_type, time_interval[i])
-        output_list.append(state)
+    with tf.variable_scope('trans_decay', reuse=tf.AUTO_REUSE):
+        trans_decay = tf.get_variable('trans_decay', [1, recurrent_state.shape[1]], initializer=initializer)
+
+    if markov_assumption:
+        for i in range(len(input_list)):
+            intensity = calculate_intensity_markov(time_interval_list=time_interval, event_list=event_list, index=i,
+                                                   base_intensity_vector=base_intensity, task_index=task_type,
+                                                   mutual_intensity_matrix=mutual_intensity)
+            recurrent_state = recurrent_state * intensity * trans_decay
+            output_state, recurrent_state = rnn_cell(input_list[i], recurrent_state)
+            output_list.append(output_state)
+    else:
+        for i in range(len(input_list)):
+            intensity = calculate_intensity_full(time_interval_list=time_interval, event_list=event_list, index=i,
+                                                 base_intensity_vector=base_intensity, task_index=task_type,
+                                                 mutual_intensity_matrix=mutual_intensity)
+            # recurrent state的传递损失
+            recurrent_state = recurrent_state*intensity*trans_decay
+            output_state, recurrent_state = rnn_cell(input_list[i], recurrent_state)
+            output_list.append(output_state)
+
     return output_list
 
 
-def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, markov_assumption=True,
-                     event_count=11, auto_encoder_value=15, auto_encoder_initializer=tf.initializers.orthogonal()):
+def calculate_intensity_markov(time_interval_list, event_list, base_intensity_vector, mutual_intensity_matrix, index,
+                               task_index, omega=-0.006):
+    # 如果是第一次入院，感觉intensity怎么取都不太合适，想想还是直接不用了算了
+    if index == 0:
+        return 0
+    # 有关计算互激发，到底是用最终要预测的那个事件，还是本次发生的事件思考了一会儿，
+    # 从拍脑袋决定来看，感觉还是用最终预测的事件比较合理
+    else:
+        intensity_sum = tf.expand_dims(base_intensity_vector[task_index], axis=1)
+
+        time_interval = tf.expand_dims(time_interval_list[index] - time_interval_list[index - 1], axis=1)
+        time = tf.exp(time_interval * omega)
+
+        mutual_intensity_vector = tf.expand_dims(mutual_intensity_matrix[task_index], axis=1)
+        event = event_list[index-1]
+        mutual_intensity = tf.matmul(event, mutual_intensity_vector)
+        intensity_sum += mutual_intensity*time
+    return intensity_sum
+
+
+def calculate_intensity_full(time_interval_list, event_list, base_intensity_vector, mutual_intensity_matrix, index,
+                             task_index, omega=-0.006):
+    # 如果是第一次入院，感觉intensity怎么取都不太合适，想想还是直接不用了算了
+    if index == 0:
+        return 0
+    else:
+        intensity_sum = tf.expand_dims(base_intensity_vector[task_index], axis=1)
+        for i in range(1, index + 1):
+            time_interval = tf.expand_dims(time_interval_list[i] - time_interval_list[i - 1], axis=1)
+            time = tf.exp(time_interval * omega)
+
+            mutual_intensity_vector = tf.expand_dims(mutual_intensity_matrix[task_index], axis=1)
+            event = event_list[i-1]
+            mutual_intensity = tf.matmul(event, mutual_intensity_vector)
+            intensity_sum += mutual_intensity*time
+    return intensity_sum
+
+
+def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                     phase_indicator, markov_assumption, auto_encoder_value,
+                     auto_encoder_initializer=tf.initializers.orthogonal()):
     """
     :param cell:
     :param num_steps:
     :param num_hidden:
-    :param num_context:
-     :param num_event:
+    :param num_context: 要求Context变量全部变为二值变量
+    :param num_event:
+    :param dae_weight:
     :param keep_rate_input:
-    :param event_count:
     :param markov_assumption:
+    :param phase_indicator:
     :param auto_encoder_value: 大于0时执行对输入的自编码，值即为最终降到的维度
     :param auto_encoder_initializer:
     :return:
@@ -58,48 +113,40 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
             batch_size = tf.placeholder(tf.int32, [], name='batch_size')
             # 标准输入规定为BTD
             event_placeholder = tf.placeholder(tf.float32, [None, num_steps, num_event], name='event_placeholder')
-            context_placeholder = tf.placeholder(tf.float32, [None, num_steps, num_context], name='context_placeholder')
+            context_placeholder = tf.placeholder(tf.float32, [None, num_steps, num_context], name='context')
             y_placeholder = tf.placeholder(tf.float32, [None, 1], name='y_placeholder')
-            phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
+
             task_type = tf.placeholder(tf.int32, shape=[], name="task_type")
-            mutual_intensity = tf.placeholder(tf.float32, shape=[event_count, event_count], name="mutual_intensity")
-            base_intensity = tf.placeholder(tf.float32, shape=[event_count, 1], name="base_intensity")
+            mutual_intensity = tf.placeholder(tf.float32, shape=[num_event, num_event], name="mutual_intensity")
+            base_intensity = tf.placeholder(tf.float32, shape=[num_event, 1], name="base_intensity")
             time_interval = tf.placeholder(tf.float32, shape=[None, num_steps], name="time_interval")
 
-        with tf.name_scope('rnn'):
+            processed_input, input_x, autoencoder_weight = autoencoder.denoising_autoencoder(
+                phase_indicator, context_placeholder, event_placeholder, keep_rate_input, auto_encoder_value,
+                auto_encoder_initializer)
 
-            # 用于判断是训练阶段还是测试阶段，用于判断是否要加Dropout
-            # dropout只加在context信息上
-            context_dropout = tf.cond(phase_indicator > 0,
-                                      lambda: context_placeholder,
-                                      lambda: tf.nn.dropout(context_placeholder, keep_rate_input))
-            input_x = tf.concat([event_placeholder, context_dropout], axis=2)
-
-            if auto_encoder_value > 0:
-                auto_encoder = tf.get_variable('auto_encoder', [num_context+num_event, auto_encoder_value],
-                                               initializer=auto_encoder_initializer)
-                unstacked_list = tf.unstack(input_x, axis=1)
-                coded_list = list()
-                for single_input in unstacked_list:
-                    coded_list.append(tf.transpose(tf.matmul(single_input, auto_encoder)))
-                processed_input = tf.convert_to_tensor(coded_list)
-            else:
-                processed_input = input_x
-
-            # 确保输入格式为 BTD
-            processed_input = tf.transpose(processed_input, [2, 0, 1])
             output_list = __hawkes_rnn(base_intensity=base_intensity, mutual_intensity=mutual_intensity,
-                                       batch_size=batch_size, num_steps=num_steps, task_type=task_type,
-                                       rnn_cell=cell, x_placeholder=processed_input, time_interval=time_interval,
+                                       batch_size=batch_size,  task_type=task_type, rnn_cell=cell,
+                                       input_x=processed_input, time_interval=time_interval,
                                        markov_assumption=markov_assumption, event_list=event_placeholder)
 
-    with tf.variable_scope('output_layer'):
+    with tf.variable_scope('output_layer', reuse=tf.AUTO_REUSE):
         output_weight = tf.get_variable("weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
         bias = tf.get_variable('bias', [])
 
-    with tf.name_scope('prediction'):
+    with tf.name_scope('loss'):
         unnormalized_prediction = tf.matmul(output_list[-1], output_weight) + bias
-        loss = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
+        loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
+
+        if auto_encoder_value > 0:
+            loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=input_x,
+                                                    weight=autoencoder_weight)
+        else:
+            loss_dae = 0
+
+        loss = loss_pred+loss_dae*dae_weight
+
+    with tf.name_scope('prediction'):
         prediction = tf.sigmoid(unnormalized_prediction)
 
     return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
@@ -108,33 +155,38 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
 
 def unit_test(cell_type):
     num_hidden = 16
-    context_number = 24
-    event_number = 12
+    embedding_input_length = 12
     weight_initializer = tf.initializers.orthogonal()
     bias_initializer = tf.initializers.zeros()
     keep_prob = 1.0
-    phase_indicator = 2
     num_steps = 10
+    num_context = 18
+    num_event = 20
+    dae_weight = 1
+
+    phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
 
     if cell_type == 'raw':
-        rnn_cell = ContextualRawCell(num_hidden=num_hidden, context_number=context_number, keep_prob=keep_prob,
-                                     weight_initializer=weight_initializer, bias_initializer=bias_initializer,
-                                     phase_indicator=phase_indicator, event_number=event_number)
+        rnn_cell = RawCell(num_hidden=num_hidden, input_length=embedding_input_length, keep_prob=keep_prob,
+                           weight_initializer=weight_initializer, bias_initializer=bias_initializer,
+                           phase_indicator=phase_indicator)
     elif cell_type == 'lstm':
-        rnn_cell = ContextualLSTMCell(num_hidden=num_hidden, context_number=context_number, keep_prob=keep_prob,
-                                      weight_initializer=weight_initializer, bias_initializer=bias_initializer,
-                                      phase_indicator=phase_indicator, event_number=event_number)
+        rnn_cell = LSTMCell(num_hidden=num_hidden, input_length=embedding_input_length, keep_prob=keep_prob,
+                            weight_initializer=weight_initializer, bias_initializer=bias_initializer,
+                            phase_indicator=phase_indicator)
     elif cell_type == 'gru':
-        rnn_cell = ContextualGRUCell(num_hidden=num_hidden, context_number=context_number, keep_prob=keep_prob,
-                                     weight_initializer=weight_initializer, bias_initializer=bias_initializer,
-                                     phase_indicator=phase_indicator, event_number=event_number)
+        rnn_cell = GRUCell(num_hidden=num_hidden, input_length=embedding_input_length, keep_prob=keep_prob,
+                           weight_initializer=weight_initializer, bias_initializer=bias_initializer,
+                           phase_indicator=phase_indicator)
     else:
         raise ValueError('Wrong Cell Type')
 
-    hawkes_rnn_model(cell=rnn_cell, num_steps=num_steps, num_hidden=num_hidden, num_event=event_number,
-                     num_context=context_number, keep_rate_input=keep_prob, event_count=11, auto_encoder_value=15)
+    hawkes_rnn_model(cell=rnn_cell, num_steps=num_steps, num_hidden=num_hidden, num_event=num_event,
+                     num_context=num_context, keep_rate_input=keep_prob, markov_assumption=True,
+                     auto_encoder_value=embedding_input_length, phase_indicator=phase_indicator, dae_weight=dae_weight)
 
 
 if __name__ == '__main__':
     for cell_type_ in ['raw', 'lstm', 'gru']:
+        tf.reset_default_graph()
         unit_test(cell_type_)
