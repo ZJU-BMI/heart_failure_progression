@@ -193,7 +193,7 @@ def feature_pre_process(origin_data, save_path):
 
 
 def main():
-    source_data_path = os.path.abspath('..\\..\\resource\未预处理长期纵向数据.csv')
+    source_data_path = os.path.abspath('..\\..\\resource\\二值化的长期纵向数据.csv')
     feature_path = os.path.abspath('..\\..\\resource\\预处理中间结果.csv')
     origin_data = read_data(source_data_path)
     feature_pre_process(origin_data, feature_path)

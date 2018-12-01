@@ -1,4 +1,5 @@
 # encoding=utf-8-sig
+# 本模块中使用的
 import tensorflow as tf
 
 
@@ -209,11 +210,11 @@ class LSTMCell(object):
             o_t = tf.transpose(tf.sigmoid(tf.matmul(weight_o, concat_1) + bias_o))
             g_t = tf.transpose(self.__activation(tf.matmul(weight_c, concat_1) + bias_c))
 
-            dropped_g_t = tf.cond(phase_indicator > 0,
-                                  lambda: g_t,
-                                  lambda: tf.nn.dropout(g_t, keep_probability))
+            dropped = tf.cond(phase_indicator > 0,
+                              lambda: i_t*g_t,
+                              lambda: tf.nn.dropout(i_t*g_t, keep_probability))
 
-            c_t = f_t*prev_cell_state + i_t*dropped_g_t
+            c_t = f_t*prev_cell_state + dropped
             h_t = o_t * self.__activation(c_t)
 
             recurrent_state = tf.concat((h_t, c_t), axis=1)

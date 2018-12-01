@@ -20,6 +20,7 @@ def __hawkes_rnn(rnn_cell, input_x, event_list, batch_size, base_intensity,  mut
     :return: loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
     其中 phase_indicator>0代表是测试期，<=0代表是训练期
     """
+    # 此处的input_list，指的是可能已经经过DAE降维后的输入
     input_list = tf.unstack(input_x, axis=1)
     event_list = tf.unstack(event_list, axis=1)
     time_interval = tf.unstack(time_interval, axis=1)
@@ -56,9 +57,10 @@ def calculate_intensity_markov(time_interval_list, event_list, base_intensity_ve
     # 如果是第一次入院，感觉intensity怎么取都不太合适，想想还是直接不用了算了
     if index == 0:
         return 0
-    # 有关计算互激发，到底是用最终要预测的那个事件，还是本次发生的事件思考了一会儿，
+    # 有关计算互激发，到底是用最终要预测的那个事件，还是本次发生的事件，思考了一会儿，
     # 从拍脑袋决定来看，感觉还是用最终预测的事件比较合理
     else:
+        # intensity sum可分为两部分，第一部分是
         intensity_sum = tf.expand_dims(base_intensity_vector[task_index], axis=1)
 
         time_interval = tf.expand_dims(time_interval_list[index] - time_interval_list[index - 1], axis=1)
@@ -78,12 +80,12 @@ def calculate_intensity_full(time_interval_list, event_list, base_intensity_vect
         return 0
     else:
         intensity_sum = tf.expand_dims(base_intensity_vector[task_index], axis=1)
-        for i in range(1, index + 1):
-            time_interval = tf.expand_dims(time_interval_list[i] - time_interval_list[i - 1], axis=1)
+        for i in range(0, index):
+            time_interval = tf.expand_dims(time_interval_list[index] - time_interval_list[i], axis=1)
             time = tf.exp(time_interval * omega)
 
             mutual_intensity_vector = tf.expand_dims(mutual_intensity_matrix[task_index], axis=1)
-            event = event_list[i-1]
+            event = event_list[i]
             mutual_intensity = tf.matmul(event, mutual_intensity_vector)
             intensity_sum += mutual_intensity*time
     return intensity_sum
@@ -182,7 +184,7 @@ def unit_test(cell_type):
         raise ValueError('Wrong Cell Type')
 
     hawkes_rnn_model(cell=rnn_cell, num_steps=num_steps, num_hidden=num_hidden, num_event=num_event,
-                     num_context=num_context, keep_rate_input=keep_prob, markov_assumption=True,
+                     num_context=num_context, keep_rate_input=keep_prob, markov_assumption=False,
                      auto_encoder_value=embedding_input_length, phase_indicator=phase_indicator, dae_weight=dae_weight)
 
 

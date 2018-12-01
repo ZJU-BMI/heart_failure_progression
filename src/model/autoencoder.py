@@ -9,6 +9,7 @@ def denoising_autoencoder(phase_indicator, context_placeholder, event_placeholde
     num_event = event_placeholder.shape[2]
     with tf.name_scope('dropout'):
         # 用于判断是训练阶段还是测试阶段，用于判断是否要加Dropout
+        # 此处的Dropout可以视为加入了Nosing
         # 为确保信息不丢失，dropout只加在context信息上
         context_dropout = tf.cond(phase_indicator > 0,
                                   lambda: context_placeholder,

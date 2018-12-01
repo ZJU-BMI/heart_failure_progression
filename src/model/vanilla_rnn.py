@@ -7,7 +7,7 @@ from rnn_cell import RawCell
 
 
 def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                      phase_indicator, auto_encoder_value=15, auto_encoder_initializer=tf.initializers.orthogonal()):
+                      phase_indicator, auto_encoder_value, auto_encoder_initializer=tf.initializers.orthogonal()):
     """
     :param cell:
     :param num_steps:
@@ -28,9 +28,10 @@ def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_
             batch_size = tf.placeholder(tf.int32, [], name='batch_size')
             # 标准输入规定为BTD
             event_placeholder = tf.placeholder(tf.float32, [None, num_steps, num_event], name='event_placeholder')
-            context_placeholder = tf.placeholder(tf.float32, [None, num_steps, num_context], name='context')
+            context_placeholder = tf.placeholder(tf.float32, [None, num_steps, num_context], name='context_placeholder')
             y_placeholder = tf.placeholder(tf.float32, [None, 1], name='y_placeholder')
 
+            # input_x 用于计算重构原始向量时产生的误差
             processed_input, input_x, autoencoder_weight = autoencoder.denoising_autoencoder(
                 phase_indicator, context_placeholder, event_placeholder, keep_rate_input, auto_encoder_value,
                 auto_encoder_initializer)

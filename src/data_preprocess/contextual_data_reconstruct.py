@@ -21,18 +21,18 @@ def main():
         data_path_dict[item] = os.path.join(data_root, item+'.csv')
     cache_root = os.path.abspath('..\\..\\resource\\cache')
 
-    visit_dict = get_valid_visit(data_path_dict, cache_root, read_from_cache=False)
-    visit_info_dict = get_visit_info(visit_dict, data_path_dict, cache_root, read_from_cache=False)
-    procedure_dict = get_procedure(visit_dict, data_path_dict, operation_map_path, cache_root, read_from_cache=False)
+    visit_dict = get_valid_visit(data_path_dict, cache_root, read_from_cache=True)
+    visit_info_dict = get_visit_info(visit_dict, data_path_dict, cache_root, read_from_cache=True)
+    procedure_dict = get_procedure(visit_dict, data_path_dict, operation_map_path, cache_root, read_from_cache=True)
     exam_dict = get_echocardiogram(visit_dict, data_path_dict, ehcocardiogram_map_path, cache_root,
                                    read_from_cache=False)
-    sex_dict, age_dict = get_demographic_info(visit_dict, data_path_dict, cache_root, read_from_cache=False)
-    medical_dict = get_medical_info(visit_dict, data_path_dict, drug_map_path, cache_root, read_from_cache=False)
+    sex_dict, age_dict = get_demographic_info(visit_dict, data_path_dict, cache_root, read_from_cache=True)
+    medical_dict = get_medical_info(visit_dict, data_path_dict, drug_map_path, cache_root, read_from_cache=True)
     diagnosis_dict = get_diagnosis_info(visit_dict, data_path_dict, diagnosis_map_path, cache_root,
-                                        read_from_cache=False)
-    vital_sign_dict = get_vital_sign(visit_dict, data_path_dict, cache_root, read_from_cache=False)
-    event_dict = build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False)
-    lab_test_dict = get_lab_test_info(visit_dict, data_path_dict, lab_test_list_path, cache_root, read_from_cache=False)
+                                        read_from_cache=True)
+    vital_sign_dict = get_vital_sign(visit_dict, data_path_dict, cache_root, read_from_cache=True)
+    event_dict = build_event(data_path_dict, visit_dict, cache_root, read_from_cache=True)
+    lab_test_dict = get_lab_test_info(visit_dict, data_path_dict, lab_test_list_path, cache_root, read_from_cache=True)
     egfr_dict = get_egfr(visit_dict, sex_dict, age_dict, lab_test_dict)
 
     save_path = os.path.abspath('..\\..\\resource\\未预处理长期纵向数据.csv')
@@ -504,7 +504,7 @@ def reconstruct_data(visit_dict, visit_info_dict, procedure_dict, exam_dict, sex
                 target_dict[item] = exam_dict[patient_id][visit_id][item]
             for item in lab_test_list:
                 # 此处3为是否异常，1为具体的值
-                target_dict[item] = lab_test_dict[patient_id][visit_id][item][1]
+                target_dict[item] = lab_test_dict[patient_id][visit_id][item][3]
             for item in vital_sign_list:
                 target_dict[item] = vital_sign_dict[patient_id][visit_id][item]
             for item in medical_list:
@@ -1213,7 +1213,7 @@ def get_diagnosis_info(visit_dict, data_path_dict, map_path, cache_root, read_fr
             diagnosis_type = line[2]
             diagnosis_desc = line[4]
 
-            # 只考虑出院诊断（Type 为3（出院主诊断），A（出院其它诊断） 
+            # 只考虑出院诊断（Type 为3（出院主诊断），A（出院其它诊断）
             if not (diagnosis_type == '3' or diagnosis_type == 'A'):
                 continue
             # 丢弃不匹配的数据

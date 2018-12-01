@@ -28,7 +28,7 @@ def get_metrics(prediction, label, threshold=0.2):
     return accuracy, precision, recall, f1, auc
 
 
-def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder):
+def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
     length = shared_hyperparameter['length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -37,18 +37,28 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder):
     context_num = shared_hyperparameter['context_num']
     event_num = shared_hyperparameter['event_num']
     dae_weight = shared_hyperparameter['dae_weight']
+    shared_hyperparameter['autoencoder'] = autoencoder
+    shared_hyperparameter['model'] = model
+    shared_hyperparameter['cell_type'] = cell_type
+
+    if autoencoder > 0:
+        input_length = autoencoder
+    else:
+        input_length = event_num + context_num
+
+    model = model + '_' + cell_type
 
     g = tf.Graph()
     with g.as_default():
         phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
         if cell_type == 'gru':
-            cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=autoencoder,
+            cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
                            num_hidden=num_hidden)
         elif cell_type == 'lstm':
-            cell = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=autoencoder,
+            cell = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
                             num_hidden=num_hidden)
         elif cell_type == 'raw':
-            cell = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=autoencoder,
+            cell = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
                            num_hidden=num_hidden)
         else:
             raise ValueError('cell type invalid')
@@ -56,15 +66,15 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder):
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator = \
             vanilla_rnn_model(num_steps=length, num_hidden=num_hidden, cell=cell, keep_rate_input=keep_rate_input,
                               dae_weight=dae_weight, phase_indicator=phase_indicator, num_context=context_num,
-                              num_event=event_num)
+                              num_event=event_num, auto_encoder_value=autoencoder)
         train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator, train_node]
-        five_fold_validation_default(shared_hyperparameter, node_list, model='vanilla_rnn')
+        five_fold_validation_default(shared_hyperparameter, node_list, model_type='vanilla_rnn', model_name=model)
 
 
-def hawkes_rnn_test(shared_hyperparameter, cell_type, markov_assumption, autoencoder):
+def hawkes_rnn_test(shared_hyperparameter, cell_type, markov_assumption, autoencoder, model):
     length = shared_hyperparameter['length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -73,18 +83,28 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, markov_assumption, autoenc
     context_num = shared_hyperparameter['context_num']
     event_num = shared_hyperparameter['event_num']
     dae_weight = shared_hyperparameter['dae_weight']
+    shared_hyperparameter['markov_assumption'] = markov_assumption
+    shared_hyperparameter['model'] = model
+    shared_hyperparameter['cell_type'] = cell_type
+    shared_hyperparameter['autoencoder'] = autoencoder
 
     g = tf.Graph()
+    model = model+'_'+cell_type
+    if autoencoder > 0:
+        input_length = autoencoder
+    else:
+        input_length = event_num + context_num
+
     with g.as_default():
         phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
         if cell_type == 'gru':
-            cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=autoencoder,
+            cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
                            num_hidden=num_hidden)
         elif cell_type == 'lstm':
-            cell = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=autoencoder,
+            cell = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
                             num_hidden=num_hidden)
         elif cell_type == 'raw':
-            cell = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=autoencoder,
+            cell = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
                            num_hidden=num_hidden)
         else:
             raise ValueError('cell type invalid')
@@ -98,7 +118,7 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, markov_assumption, autoenc
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator, task_type, time_interval, mutual_intensity, base_intensity, train_node]
-        five_fold_validation_default(shared_hyperparameter, node_list, model='hawkes_rnn')
+        five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
 
 
 def run_graph(data_source, max_step, node_list, validate_step_interval, task_name, experiment_config, model):
@@ -250,7 +270,7 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, mo
         raise ValueError('invalid model name')
 
 
-def five_fold_validation_default(experiment_config, node_list, model):
+def five_fold_validation_default(experiment_config, node_list, model_type, model_name):
     length = experiment_config['length']
     data_folder = experiment_config['data_folder']
     batch_size = experiment_config['batch_size']
@@ -258,7 +278,7 @@ def five_fold_validation_default(experiment_config, node_list, model):
     max_iter = experiment_config['max_iter']
     validate_step_interval = experiment_config['validate_step_interval']
 
-    save_folder = os.path.abspath('..\\..\\resource\\prediction_result\\{}'.format(model))
+    save_folder = os.path.abspath('..\\..\\resource\\prediction_result\\{}'.format(model_name))
 
     # 五折交叉验证，跑十次
     for task in event_list:
@@ -268,7 +288,7 @@ def five_fold_validation_default(experiment_config, node_list, model):
                 result_record[j] = dict()
             for i in range(10):
                 # 输出当前实验设置
-                print('{}_repeat_{}_fold_{}_task_{}_log'.format(model, i, j, task))
+                print('{}_repeat_{}_fold_{}_task_{}_log'.format(model_name, i, j, task))
                 for key in experiment_config:
                     print(key+': '+str(experiment_config[key]))
 
@@ -277,7 +297,7 @@ def five_fold_validation_default(experiment_config, node_list, model):
                                          repeat=i)
 
                 best_result = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
-                                        validate_step_interval=validate_step_interval, model=model,
+                                        validate_step_interval=validate_step_interval, model=model_type,
                                         experiment_config=experiment_config, task_name=task)
                 print(task)
                 print(best_result)
@@ -340,7 +360,7 @@ def set_hyperparameter(time_window, full_event_test=False):
     keep_rate_hidden = 1
     keep_rate_input = 0.8
     dae_weight = 1
-    context_num = 111
+    context_num = 107
     event_num = 11
 
     event_id_dict = dict()
@@ -379,19 +399,42 @@ def set_hyperparameter(time_window, full_event_test=False):
 
 def main():
     time_window_list = ['三月', '一年']
-    test_model = 0
-    for item in time_window_list:
-        config = set_hyperparameter(full_event_test=True, time_window=item)
-        if test_model == 0:
-            new_graph = tf.Graph()
-            with new_graph.as_default():
-                hawkes_rnn_test(config, cell_type='lstm', markov_assumption=False, autoencoder=15)
-        elif test_model == 1:
-            new_graph = tf.Graph()
-            with new_graph.as_default():
-                vanilla_rnn_test(config, cell_type='lstm', autoencoder=15)
-        else:
-            raise ValueError('invalid test model')
+    test_model = 5
+    for cell_type in ['lstm', 'gru', 'raw']:
+        for item in time_window_list:
+            config = set_hyperparameter(full_event_test=True, time_window=item)
+            if test_model == 0:
+                model = 'hawkes_rnn_markov_false_autoencoder_true'
+                new_graph = tf.Graph()
+                with new_graph.as_default():
+                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=False, autoencoder=15, model=model)
+            elif test_model == 1:
+                new_graph = tf.Graph()
+                model = 'hawkes_rnn_markov_true_autoencoder_true'
+                with new_graph.as_default():
+                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=True, autoencoder=15, model=model)
+            elif test_model == 2:
+                new_graph = tf.Graph()
+                model = 'hawkes_rnn_markov_false_autoencoder_false'
+                with new_graph.as_default():
+                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=False, autoencoder=-1, model=model)
+            elif test_model == 3:
+                new_graph = tf.Graph()
+                model = 'hawkes_rnn_markov_true_autoencoder_false'
+                with new_graph.as_default():
+                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=True, autoencoder=-1, model=model)
+            elif test_model == 4:
+                new_graph = tf.Graph()
+                model = 'vanilla_rnn_autoencoder_true'
+                with new_graph.as_default():
+                    vanilla_rnn_test(config, cell_type=cell_type, autoencoder=15, model=model)
+            elif test_model == 5:
+                new_graph = tf.Graph()
+                model = 'vanilla_rnn_autoencoder_false'
+                with new_graph.as_default():
+                    vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
+            else:
+                raise ValueError('invalid test model')
 
 
 if __name__ == '__main__':
