@@ -1,8 +1,5 @@
 import csv
 import os
-import re
-import datetime
-from itertools import islice
 
 
 def main():

@@ -63,10 +63,14 @@ class RawCell(object):
         self.__variable_dict = variable_dict
 
     @property
-    def num_hidden(self):
+    def state_size(self):
         return self.__num_hidden
 
-    def generate_initial_state(self, batch_size, configure='zero'):
+    @property
+    def output_size(self):
+        return self.__num_hidden
+
+    def get_initial_state(self, batch_size, configure='zero'):
         if configure == 'zero':
             return tf.zeros([batch_size, self.__num_hidden])
         else:
@@ -150,10 +154,14 @@ class GRUCell(object):
         self.__variable_dict = variable_dict
 
     @property
-    def num_hidden(self):
+    def state_size(self):
         return self.__num_hidden
 
-    def generate_initial_state(self, batch_size, configure='zero'):
+    @property
+    def output_size(self):
+        return self.__num_hidden
+
+    def get_initial_state(self, batch_size, configure='zero'):
         if configure == 'zero':
             return tf.zeros([batch_size, self.__num_hidden])
         else:
@@ -243,10 +251,14 @@ class LSTMCell(object):
         self.__variable_dict = variable_dict
 
     @property
-    def num_hidden(self):
+    def state_size(self):
         return self.__num_hidden
 
-    def generate_initial_state(self, batch_size, configure='zero'):
+    @property
+    def output_size(self):
+        return self.__num_hidden
+
+    def get_initial_state(self, batch_size, configure='zero'):
         if configure == 'zero':
             return tf.zeros([batch_size, self.__num_hidden*2])
         else:

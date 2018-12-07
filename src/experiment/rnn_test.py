@@ -399,7 +399,7 @@ def set_hyperparameter(time_window, full_event_test=False):
 
 def main():
     time_window_list = ['三月', '一年']
-    test_model = 5
+    test_model = 0
     for cell_type in ['lstm', 'gru', 'raw']:
         for item in time_window_list:
             config = set_hyperparameter(full_event_test=True, time_window=item)
