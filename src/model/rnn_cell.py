@@ -103,7 +103,7 @@ class GRUCell(object):
 
     def __call__(self, input_x, recurrent_state):
         """
-        :param input_x: BTD format
+        :param input_x: TBD format
         :param recurrent_state:
         :return: new hidden state: BD format
         """

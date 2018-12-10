@@ -3,7 +3,6 @@
 # 没有改动任何源代码，仅仅是对我觉得需要特别说明的地方做了额外的补充注释。
 
 from tensorflow.python.eager import context
-from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
@@ -17,7 +16,6 @@ from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import nest
-from tensorflow.python.util.tf_export import tf_export
 
 
 _concat = rnn_cell_impl._concat

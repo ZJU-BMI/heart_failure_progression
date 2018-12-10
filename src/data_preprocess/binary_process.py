@@ -4,9 +4,11 @@ import os
 
 def main():
     data_path = os.path.abspath('..\\..\\resource\\未预处理长期纵向数据.csv')
-    save_data_path = os.path.abspath('..\\..\\resource\\二值化的长期纵向数据.csv')
-    data_dict, event_list, contextual_set = read_data(data_path, event_count=11)
-    binary_data_dict, revised_contextual_set = binary(data_dict, contextual_set)
+    binary_path = os.path.abspath('..\\..\\resource\\二值化策略.csv')
+    save_data_path = os.path.abspath('..\\..\\resource\\二值化后的长期纵向数据.csv')
+    data_dict, event_list, contextual_list = read_data(data_path, event_count=11)
+    binary_process_dict = read_binary_process_feature(binary_path)
+    binary_data_dict, revised_content_list = binary(data_dict, binary_process_dict, contextual_list)
 
     # 写数据
     data_to_write = list()
@@ -15,7 +17,7 @@ def main():
     head.append('visit_id')
     for item in event_list:
         head.append(item)
-    for item in revised_contextual_set:
+    for item in revised_content_list:
         head.append(item)
     data_to_write.append(head)
 
@@ -33,6 +35,31 @@ def main():
                 data_to_write.append(row)
     with open(save_data_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(data_to_write)
+
+
+def read_binary_process_feature(data_path):
+    """
+    目前定义二值化操作的feature为三类
+    1. 根据原始数据即可二值化的，创造3维哑变量解决问题(Type 0)
+    2. 根据原始数据即可二值化的，创造2维哑变量解决问题 暂无
+    3. 只需要定义为正常/异常的feature，也就是设定一个阈值，将数值型数据进行相应的转换 (Type 2)
+    4. 需要定义为偏高/正常/偏低的feature，设定哑变量，将数值型数据创造为3维one hot编码 暂无
+
+    若以后需要进行额外的细化，则进行类型拓展
+    :param data_path:
+    :return:
+    """
+    binary_dict = dict()
+    with open(data_path, 'r', encoding='gbk', newline='') as file:
+        csv_reader = csv.reader(file)
+        for line in csv_reader:
+            if line[1] == '0':
+                binary_dict[line[0]] = [0, ]
+            elif line[1] == "1":
+                binary_dict[line[0]] = [1, float(line[2]), float(line[3])]
+            elif line[1] == '2':
+                binary_dict[line[0]] = [2, float(line[2])]
+    return binary_dict
 
 
 def data_regenerate(event_dict, origin_file, write_path):
@@ -111,140 +138,83 @@ def data_regenerate(event_dict, origin_file, write_path):
     return data_dict
 
 
-def binary(data_dict, contextual_set):
+def binary(data_dict, binary_process_dict, contextual_list):
     """
-    此处的Binary策略为定制的，主要是这两天实在写不动代码了
-    以后可以修复为有config配置的二值化策略
+    根据配置文件进行二值化
     :return:
     """
-    for patient_id in data_dict:
-        for visit_id in data_dict[patient_id]:
-            bp_dia = float(data_dict[patient_id][visit_id].pop('血压Low'))
-            bp_sys = float(data_dict[patient_id][visit_id].pop('血压high'))
-            height = float(data_dict[patient_id][visit_id].pop('身高'))
-            weight = float(data_dict[patient_id][visit_id].pop('体重'))
-            bp = float(data_dict[patient_id][visit_id].pop('脉搏'))
-            egfr = float(data_dict[patient_id][visit_id].pop('EGFR'))
-            age = float(data_dict[patient_id][visit_id].pop('年龄'))
-            los = float(data_dict[patient_id][visit_id].pop('住院天数'))
-            ef = float(data_dict[patient_id][visit_id].pop('射血分数'))
+    item_list = list()
 
-            contextual_set.discard('血压Low')
-            contextual_set.discard('射血分数')
-            contextual_set.discard('血压high')
-            contextual_set.discard('身高')
-            contextual_set.discard('体重')
-            contextual_set.discard('脉搏')
-            contextual_set.discard('EGFR')
-            contextual_set.discard('年龄')
-            contextual_set.discard('住院天数')
+    # 读取item，变换数据结构
+    for item in binary_process_dict:
+        item_list.append(item)
+        contextual_list.remove(item)
+        if binary_process_dict[item][0] == 0:
+            for patient_id in data_dict:
+                for visit_id in data_dict[patient_id]:
+                    data_dict[patient_id][visit_id][item + "_1"] = 0
+                    data_dict[patient_id][visit_id][item + "_2"] = 0
+                    data_dict[patient_id][visit_id][item + "_3"] = 0
+                    data_dict[patient_id][visit_id][item + "_lost"] = 0
 
-            if los <= 7:
-                data_dict[patient_id][visit_id]['住院一周以内'] = 1
-                data_dict[patient_id][visit_id]['住院半月以内'] = 0
-                data_dict[patient_id][visit_id]['住院半月以上'] = 0
-            elif 7 < los < 15:
-                data_dict[patient_id][visit_id]['住院一周以内'] = 0
-                data_dict[patient_id][visit_id]['住院半月以内'] = 1
-                data_dict[patient_id][visit_id]['住院半月以上'] = 0
-            else:
-                data_dict[patient_id][visit_id]['住院一周以内'] = 0
-                data_dict[patient_id][visit_id]['住院半月以内'] = 0
-                data_dict[patient_id][visit_id]['住院半月以上'] = 1
-            contextual_set.add('住院一周以内')
-            contextual_set.add('住院半月以内')
-            contextual_set.add('住院半月以上')
+                    value = float(data_dict[patient_id][visit_id].pop(item))
+                    if value == -1 or value == -1.0:
+                        data_dict[patient_id][visit_id][item + "_lost"] = 1
+                    elif value == 0:
+                        data_dict[patient_id][visit_id][item + "_1"] = 1
+                    elif value == 1:
+                        data_dict[patient_id][visit_id][item + "_2"] = 1
+                    else:
+                        data_dict[patient_id][visit_id][item + "_3"] = 1
+            contextual_list.append(item + "_1")
+            contextual_list.append(item + "_2")
+            contextual_list.append(item + "_3")
+            contextual_list.append(item + "_lost")
+        if binary_process_dict[item][0] == 1:
+            for patient_id in data_dict:
+                for visit_id in data_dict[patient_id]:
+                    data_dict[patient_id][visit_id][item + "_1"] = 0
+                    data_dict[patient_id][visit_id][item + "_2"] = 0
+                    data_dict[patient_id][visit_id][item + "_3"] = 0
+                    data_dict[patient_id][visit_id][item + "_lost"] = 0
 
-            if age < 40:
-                data_dict[patient_id][visit_id]['青年患者'] = 1
-                data_dict[patient_id][visit_id]['中年患者'] = 0
-                data_dict[patient_id][visit_id]['老年患者'] = 0
-            elif 40 <= age < 60:
-                data_dict[patient_id][visit_id]['青年患者'] = 0
-                data_dict[patient_id][visit_id]['中年患者'] = 1
-                data_dict[patient_id][visit_id]['老年患者'] = 0
-            else:
-                data_dict[patient_id][visit_id]['青年患者'] = 0
-                data_dict[patient_id][visit_id]['中年患者'] = 0
-                data_dict[patient_id][visit_id]['老年患者'] = 1
-            contextual_set.add('青年患者')
-            contextual_set.add('中年患者')
-            contextual_set.add('老年患者')
-
-            if egfr >= 80:
-                data_dict[patient_id][visit_id]['肾小球滤过率正常'] = 1
-                data_dict[patient_id][visit_id]['肾小球滤过率偏低'] = 0
-                data_dict[patient_id][visit_id]['肾小球滤过率严重偏低'] = 0
-            elif 30 <= egfr < 80:
-                data_dict[patient_id][visit_id]['肾小球滤过率正常'] = 0
-                data_dict[patient_id][visit_id]['肾小球滤过率偏低'] = 1
-                data_dict[patient_id][visit_id]['肾小球滤过率严重偏低'] = 0
-            else:
-                data_dict[patient_id][visit_id]['肾小球滤过率正常'] = 0
-                data_dict[patient_id][visit_id]['肾小球滤过率偏低'] = 0
-                data_dict[patient_id][visit_id]['肾小球滤过率严重偏低'] = 1
-            contextual_set.add('肾小球滤过率正常')
-            contextual_set.add('肾小球滤过率偏低')
-            contextual_set.add('肾小球滤过率严重偏低')
-
-            if bp > 100:
-                data_dict[patient_id][visit_id]['脉搏心动过速'] = 1
-            else:
-                data_dict[patient_id][visit_id]['脉搏心动过速'] = 0
-            contextual_set.add('脉搏心动过速')
-
-            if ef > 50:
-                data_dict[patient_id][visit_id]['射血分数异常'] = 1
-            else:
-                data_dict[patient_id][visit_id]['射血分数异常'] = 0
-            contextual_set.add('射血分数异常')
-
-            if bp_dia > 90:
-                data_dict[patient_id][visit_id]['舒张压偏高'] = 1
-            else:
-                data_dict[patient_id][visit_id]['舒张压偏高'] = 0
-            contextual_set.add('舒张压偏高')
-
-            if bp_sys > 140:
-                data_dict[patient_id][visit_id]['收缩压偏高'] = 1
-            else:
-                data_dict[patient_id][visit_id]['收缩压偏高'] = 0
-            contextual_set.add('收缩压偏高')
-
-            bmi = weight/((height/100)*(height/100))
-            if bmi <= 18.5:
-                data_dict[patient_id][visit_id]['BMI偏低'] = 1
-                data_dict[patient_id][visit_id]['BMI正常'] = 0
-                data_dict[patient_id][visit_id]['BMI超重'] = 0
-                data_dict[patient_id][visit_id]['BMI肥胖'] = 0
-            elif 18.5 < bmi <= 23.9:
-                data_dict[patient_id][visit_id]['BMI偏低'] = 0
-                data_dict[patient_id][visit_id]['BMI正常'] = 1
-                data_dict[patient_id][visit_id]['BMI超重'] = 0
-                data_dict[patient_id][visit_id]['BMI肥胖'] = 0
-            elif 24 < bmi <= 27:
-                data_dict[patient_id][visit_id]['BMI偏低'] = 0
-                data_dict[patient_id][visit_id]['BMI正常'] = 0
-                data_dict[patient_id][visit_id]['BMI超重'] = 1
-                data_dict[patient_id][visit_id]['BMI肥胖'] = 0
-            else:
-                data_dict[patient_id][visit_id]['BMI偏低'] = 0
-                data_dict[patient_id][visit_id]['BMI正常'] = 0
-                data_dict[patient_id][visit_id]['BMI超重'] = 0
-                data_dict[patient_id][visit_id]['BMI肥胖'] = 1
-            contextual_set.add('BMI偏低')
-            contextual_set.add('BMI正常')
-            contextual_set.add('BMI超重')
-            contextual_set.add('BMI肥胖')
-
-    return data_dict, contextual_set
+                    value = float(data_dict[patient_id][visit_id].pop(item))
+                    if value == -1 or value == -1.0:
+                        data_dict[patient_id][visit_id][item + "_lost"] = 1
+                    elif value < float(binary_process_dict[item][1]):
+                        data_dict[patient_id][visit_id][item + "_1"] = 1
+                    elif value < float(binary_process_dict[item][2]):
+                        data_dict[patient_id][visit_id][item + "_2"] = 1
+                    else:
+                        data_dict[patient_id][visit_id][item + "_3"] = 1
+            contextual_list.append(item + "_1")
+            contextual_list.append(item + "_2")
+            contextual_list.append(item + "_3")
+            contextual_list.append(item + "_lost")
+        if binary_process_dict[item][0] == 2:
+            for patient_id in data_dict:
+                for visit_id in data_dict[patient_id]:
+                    data_dict[patient_id][visit_id][item + "_1"] = 0
+                    data_dict[patient_id][visit_id][item + "_2"] = 0
+                    data_dict[patient_id][visit_id][item + "_lost"] = 1
+                    value = float(data_dict[patient_id][visit_id].pop(item))
+                    if value == -1 or value == -1.0:
+                        data_dict[patient_id][visit_id][item + "_lost"] = 1
+                    elif value < binary_process_dict[item][1]:
+                        data_dict[patient_id][visit_id][item + "_1"] = 1
+                    elif value < binary_process_dict[item][2]:
+                        data_dict[patient_id][visit_id][item + "_2"] = 1
+            contextual_list.append(item + "_1")
+            contextual_list.append(item + "_2")
+            contextual_list.append(item + "_lost")
+    return data_dict, contextual_list
 
 
 def read_data(file_path, event_count=11):
     data_dict = dict()
     feature_dict = dict()
-    event_list = list()
-    contextual_set = set()
+    event_index_list = list()
+    context_index_list = list()
     with open(file_path, 'r', encoding='gbk', newline='') as file:
         csv_reader = csv.reader(file)
         head_flag = True
@@ -252,13 +222,11 @@ def read_data(file_path, event_count=11):
             if head_flag:
                 for i in range(2, len(line)):
                     feature_dict[i] = line[i]
+                    # 按照需求记录event, context的有序内容信息
                     if i <= event_count+3:
-                        # 确保前14项包含了所有事件及时间差，后面的特征项的顺序可以不管
-                        content = line[i]
-                        event_list.append(content)
+                        event_index_list.append(line[i])
                     else:
-                        content = line[i]
-                        contextual_set.add(content)
+                        context_index_list.append(line[i])
                 head_flag = False
                 continue
 
@@ -271,7 +239,7 @@ def read_data(file_path, event_count=11):
 
             for i in range(2, len(line)):
                 data_dict[patient_id][visit_id][feature_dict[i]] = line[i]
-    return data_dict, event_list, contextual_set
+    return data_dict, event_index_list, context_index_list
 
 
 if __name__ == '__main__':

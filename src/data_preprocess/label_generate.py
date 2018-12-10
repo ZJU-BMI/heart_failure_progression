@@ -69,7 +69,7 @@ def generate_label(data_dict, save_path,):
         sorted(label_dict[patient_id], key=lambda x: x[0])
 
     # 对一次入院所对应的标签
-    # 统计一年内的所有入院，然后分别把相对应的事件置一，如果没有一年内入院，则标签和本次入院一样
+    # 统计一年内的所有入院，然后分别把相对应的事件置一，如果没有一年内入院，则标签置零
     # 同样的道理应用于两年内入院
     for patient_id in label_dict:
         for i in range(0, len(label_dict[patient_id])-1):

@@ -19,16 +19,16 @@ def denoising_autoencoder(phase_indicator, context_placeholder, event_placeholde
         # 上面的步骤可以视为已经加入了噪声，因此此处只需要降维即可
         input_x = tf.concat([context_dropout, event_placeholder], axis=2)
         if autoencoder_value > 0:
-            with tf.variable_scope('auto_encoder', reuse=tf.AUTO_REUSE):
+            with tf.variable_scope('auto_encoder'):
                 autoencoder_weight = tf.get_variable('autoencoder', [num_context + num_event, autoencoder_value],
                                                      initializer=auto_encoder_initializer)
 
-            unstacked_list = tf.unstack(input_x, axis=1)
+            unstacked_list = tf.unstack(input_x, axis=0)
             coded_list = list()
             for single_input in unstacked_list:
                 coded_list.append(tf.sigmoid(tf.transpose(tf.matmul(single_input, autoencoder_weight))))
             # 确保输入格式为 BTD
-            processed_input = tf.transpose(tf.convert_to_tensor(coded_list), [2, 0, 1])
+            processed_input = tf.transpose(tf.convert_to_tensor(coded_list), [0, 2, 1])
 
         else:
             processed_input = input_x
@@ -38,13 +38,13 @@ def denoising_autoencoder(phase_indicator, context_placeholder, event_placeholde
 
 def autoencoder_loss(origin_input, embedding, weight):
     weight_tied = tf.transpose(weight)
-    embedding_unstack = tf.unstack(embedding, axis=1)
+    embedding_unstack = tf.unstack(embedding, axis=0)
 
     reconstruct_list = list()
     for i in range(len(embedding_unstack)):
         reconstructed = tf.matmul(embedding_unstack[i], weight_tied)
         reconstruct_list.append(reconstructed)
-    reconstruct_input = tf.transpose(tf.convert_to_tensor(reconstruct_list), [1, 0, 2])
+    reconstruct_input = tf.convert_to_tensor(reconstruct_list)
 
     loss = tf.losses.sigmoid_cross_entropy(logits=reconstruct_input, multi_class_labels=origin_input)
     return loss

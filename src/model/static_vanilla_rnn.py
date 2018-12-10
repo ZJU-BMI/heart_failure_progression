@@ -23,7 +23,7 @@ def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_
     loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
     其中 phase_indicator>0代表是测试期，<=0代表是训练期
     """
-    with tf.name_scope('hawkes_rnn'):
+    with tf.name_scope('vanilla_rnn'):
         with tf.name_scope('data_source'):
             batch_size = tf.placeholder(tf.int32, [], name='batch_size')
             # 标准输入规定为BTD

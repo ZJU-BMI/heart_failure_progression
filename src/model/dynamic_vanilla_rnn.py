@@ -1,6 +1,6 @@
 # encoding=utf-8-sig
 # 注释日期2018年12月7日
-# 参考版本 Tensorflow 1.12.0
+# 参考版本 Tensorflow 1.12.0 dynamic_rnn函数
 # 删除了大量校验代码，降低鲁棒性以换取可读性
 # 删除了大量文档
 # 禁止输入keras cell
@@ -26,7 +26,7 @@ from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import nest
-
+import autoencoder
 from rnn_cell import GRUCell, LSTMCell, RawCell
 
 # 拼接矩阵的shape
@@ -81,8 +81,8 @@ def _should_cache():
     return control_flow_util.GetContainingWhileContext(ctxt) is None
 
 
-def vanilla_dynamic_rnn(cell, inputs, sequence_length, initial_state, parallel_iterations=32, swap_memory=False,
-                        scope=None):
+def _vanilla_dynamic_rnn(cell, inputs, sequence_length, initial_state, parallel_iterations=32, swap_memory=False,
+                         scope=None):
     """Creates a recurrent neural network specified by RNNCell `cell`.
 
     Args:
@@ -268,40 +268,100 @@ def _rnn_step(time, sequence_length, zero_output, state, call_cell):
     return final_output, final_state
 
 
+def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                      phase_indicator, autoencoder_length, autoencoder_initializer=tf.initializers.orthogonal()):
+    """
+        :param cell:
+        :param num_steps:
+        :param num_hidden:
+        :param num_context: 要求Context变量全部变为二值变量
+        :param num_event:
+        :param dae_weight:
+        :param keep_rate_input:
+        :param phase_indicator:
+        :param autoencoder_length: 大于0时执行对输入的自编码，值即为最终降到的维度
+        :param autoencoder_initializer:
+        :return:
+        loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
+        其中 phase_indicator>0代表是测试期，<=0代表是训练期
+        """
+    with tf.name_scope('vanilla_model'):
+        with tf.name_scope('data_source'):
+            # 标准输入规定为TBD
+            batch_size = tf.placeholder(tf.int32, [], name='batch_size')
+            event_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_event], name='event_placeholder')
+            context_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_context], name='context_placeholder')
+            sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
+            y_placeholder = tf.placeholder(tf.float32, [None, 1], name='y_placeholder')
+            initial_state = cell.get_initial_state(batch_size)
+
+        with tf.name_scope('autoencoder'):
+            # input_x 用于计算重构原始向量时产生的误差
+            processed_input, origin_input, autoencoder_weight = autoencoder.denoising_autoencoder(
+                phase_indicator, context_placeholder, event_placeholder, keep_rate_input, autoencoder_length,
+                autoencoder_initializer)
+
+        with tf.name_scope('vanilla_rnn'):
+            output_final, final_state = _vanilla_dynamic_rnn(cell, processed_input, sequence_length, initial_state)
+
+    with tf.variable_scope('output_layer'):
+        output_weight = tf.get_variable("weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
+        bias = tf.get_variable('bias', [])
+
+    with tf.name_scope('loss'):
+        unnormalized_prediction = tf.matmul(final_state, output_weight) + bias
+        loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
+
+        if autoencoder_length > 0:
+            loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=origin_input,
+                                                    weight=autoencoder_weight)
+        else:
+            loss_dae = 0
+
+        loss = loss_pred + loss_dae * dae_weight
+
+    with tf.name_scope('prediction'):
+        prediction = tf.sigmoid(unnormalized_prediction)
+
+    return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator
+
+
 def unit_test():
-    batch_size = tf.placeholder(tf.int32, [], name='batch_size')
     num_hidden = 10
     num_steps = 20
-    input_length = 25
     keep_prob = 1.0
+    num_context = 50
+    num_event = 20
+    keep_rate_input = 0.8
+    dae_weight = 1
+    autoencoder_length = 15
+    if autoencoder_length > 0:
+        input_length = autoencoder_length
+    else:
+        input_length = num_event+num_context
 
     initializer_o = tf.initializers.orthogonal()
     initializer_z = tf.initializers.zeros()
-
-    # input should be BTD format
-    input_x = tf.placeholder(tf.float32, [num_steps, None, input_length], name='event_input')
-    phase_indicator = tf.placeholder(tf.int32, [], name='phase_indicator')
-    sequence_length = tf.placeholder(tf.int32, [None], name='phase_indicator')
-    zero_state = tf.zeros([batch_size, num_hidden])
+    phase_indicator = tf.placeholder(tf.int16, [])
 
     # 试验阶段
     test_cell_type = 0
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
-        vanilla_dynamic_rnn(a_cell, input_x, sequence_length, zero_state)
+        vanilla_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                          phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden,  weight_initializer=initializer_o, bias_initializer=initializer_z,
                          keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
-        vanilla_dynamic_rnn(b_cell, input_x, sequence_length, zero_state)
+        vanilla_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                          phase_indicator, autoencoder_length)
 
     elif test_cell_type == 2:
-        c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length,weight_initializer=initializer_o,
+        c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                           bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
-        hidden_state = zero_state
-        context_state = tf.zeros([batch_size, num_hidden])
-        recurrent_state = tf.concat([hidden_state, context_state], axis=1)
-        vanilla_dynamic_rnn(c_cell, input_x, sequence_length, recurrent_state)
+        vanilla_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                          phase_indicator, autoencoder_length)
     else:
         print('No Cell Test')
     print('finish')

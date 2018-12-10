@@ -25,7 +25,7 @@ def main():
     visit_info_dict = get_visit_info(visit_dict, data_path_dict, cache_root, read_from_cache=True)
     procedure_dict = get_procedure(visit_dict, data_path_dict, operation_map_path, cache_root, read_from_cache=True)
     exam_dict = get_echocardiogram(visit_dict, data_path_dict, ehcocardiogram_map_path, cache_root,
-                                   read_from_cache=False)
+                                   read_from_cache=True)
     sex_dict, age_dict = get_demographic_info(visit_dict, data_path_dict, cache_root, read_from_cache=True)
     medical_dict = get_medical_info(visit_dict, data_path_dict, drug_map_path, cache_root, read_from_cache=True)
     diagnosis_dict = get_diagnosis_info(visit_dict, data_path_dict, diagnosis_map_path, cache_root,
@@ -37,7 +37,7 @@ def main():
 
     save_path = os.path.abspath('..\\..\\resource\\未预处理长期纵向数据.csv')
     reconstruct_data(visit_dict, visit_info_dict, procedure_dict, exam_dict, sex_dict, age_dict, medical_dict,
-                     diagnosis_dict, vital_sign_dict, lab_test_dict, egfr_dict, event_dict, save_path)
+                     diagnosis_dict, vital_sign_dict, lab_test_dict, egfr_dict, event_dict, save_path, True)
 
 
 def build_event(data_path_dict, visit_dict, cache_root, read_from_cache=False):
@@ -436,7 +436,8 @@ def get_visit_info(visit_dict, data_path_dict, cache_root, read_from_cache=False
 
 
 def reconstruct_data(visit_dict, visit_info_dict, procedure_dict, exam_dict, sex_dict, age_dict, medical_dict,
-                     diagnosis_dict, vital_sign_dict, lab_test_dict, egfr_dict, event_dict, save_path):
+                     diagnosis_dict, vital_sign_dict, lab_test_dict, egfr_dict, event_dict, save_path,
+                     labtest_binary=False):
     # 获取手术，检查，用药，诊断，关键指标，实验室检查的有序序列
     general_list = list()
     visit_info_list = list()
@@ -504,7 +505,10 @@ def reconstruct_data(visit_dict, visit_info_dict, procedure_dict, exam_dict, sex
                 target_dict[item] = exam_dict[patient_id][visit_id][item]
             for item in lab_test_list:
                 # 此处3为是否异常，1为具体的值
-                target_dict[item] = lab_test_dict[patient_id][visit_id][item][3]
+                if labtest_binary:
+                    target_dict[item] = lab_test_dict[patient_id][visit_id][item][3]
+                else:
+                    target_dict[item] = lab_test_dict[patient_id][visit_id][item][1]
             for item in vital_sign_list:
                 target_dict[item] = vital_sign_dict[patient_id][visit_id][item]
             for item in medical_list:
@@ -755,7 +759,7 @@ def get_vital_sign(visit_dict, data_path_dict, cache_root, read_from_cache=False
 
     # 构建数据模板
     vital_sign_dict = dict()
-    feature_list = ['血压Low', '血压high', '身高', '体重', '脉搏']
+    feature_list = ['血压Low', '血压high', '身高', '体重', '脉搏', 'BMI']
     for patient_id in visit_dict:
         vital_sign_dict[patient_id] = dict()
         for visit_id in visit_dict[patient_id]:
@@ -784,11 +788,30 @@ def get_vital_sign(visit_dict, data_path_dict, cache_root, read_from_cache=False
             if time_point < previous_time:
                 vital_sign_dict[patient_id][visit_id][vital_sign] = [value, time_point]
 
-    data_to_write = list()
+    # 填写BMI
+    for patient_id in vital_sign_dict:
+        for visit_id in vital_sign_dict[patient_id]:
+            height = float(vital_sign_dict[patient_id][visit_id]['身高'][0])
+            weight = float(vital_sign_dict[patient_id][visit_id]['体重'][0])
+            if height != 1.0 and weight != -1.0 and height != 1 and weight != -1:
+                bmi = weight * 10000 / (height * height)
+                if bmi <= 50:
+                    vital_sign_dict[patient_id][visit_id]['BMI'][0] = bmi
+            vital_sign_dict[patient_id][visit_id].pop('身高')
+            vital_sign_dict[patient_id][visit_id].pop('体重')
+
+    # 去除时间信息
     for patient_id in vital_sign_dict:
         for visit_id in vital_sign_dict[patient_id]:
             for vital_sign in vital_sign_dict[patient_id][visit_id]:
                 value, _ = vital_sign_dict[patient_id][visit_id][vital_sign]
+                vital_sign_dict[patient_id][visit_id][vital_sign] = value
+
+    data_to_write = list()
+    for patient_id in vital_sign_dict:
+        for visit_id in vital_sign_dict[patient_id]:
+            for vital_sign in vital_sign_dict[patient_id][visit_id]:
+                value = vital_sign_dict[patient_id][visit_id][vital_sign]
                 data_to_write.append([patient_id, visit_id, vital_sign, value])
 
     cache_path = os.path.join(cache_root, 'vital_sign.csv')
@@ -1302,10 +1325,12 @@ def get_lab_test_info(visit_dict, data_path_dict, name_list_path, cache_root, re
             if not result_dict.__contains__(test_no):
                 result_dict[test_no] = dict()
 
-            if abnormal == 'N':
+            if abnormal == 'L':
                 abnormal = 0
-            elif abnormal == 'H' or abnormal == 'L':
+            elif abnormal == 'N':
                 abnormal = 1
+            elif abnormal == 'H':
+                abnormal = 2
             else:
                 abnormal = -1
 

@@ -1,6 +1,9 @@
 # encoding=utf-8
 import csv
 import os
+import copy
+import numpy as np
+from sklearn.linear_model import LogisticRegression
 
 
 def read_data(file_path):
@@ -28,60 +31,6 @@ def read_data(file_path):
     return data_dict
 
 
-def data_impute(data_dict):
-    """
-    数值型数据填补中位数，分类数据填补众数
-    :param data_dict:
-    :return:
-    """
-    feature_attribute_dict = dict()
-    # 先扫描数据集，确定每个属性的类型（数值型Or分类型）
-    for patient in data_dict:
-        for visit_id in data_dict[patient]:
-            for feature in data_dict[patient][visit_id]:
-                if not feature_attribute_dict.__contains__(feature):
-                    feature_attribute_dict[feature] = 'categorical'
-                value = data_dict[patient][visit_id][feature]
-                if value == '-1' or len(value) > 10:
-                    continue
-                if float(value) != 1.0 and float(value) != 0.0:
-                    feature_attribute_dict[feature] = 'numerical'
-
-    # 得到数据
-    feature_dict = dict()
-    for feature in feature_attribute_dict:
-        feature_dict[feature] = []
-    for patient in data_dict:
-        for visit_id in data_dict[patient]:
-            for feature in data_dict[patient][visit_id]:
-                value = data_dict[patient][visit_id][feature]
-                if value != '-1':
-                    feature_dict[feature].append(float(value))
-    for feature in feature_dict:
-        feature_dict[feature] = sorted(feature_dict[feature])
-
-    # 得到填充值
-    feature_fed_dict = dict()
-    for feature in feature_dict:
-        median = len(feature_dict[feature]) // 2
-        feature_fed_dict[feature] = feature_dict[feature][median]
-
-    # 数据填充
-    data_processed_dict = dict()
-    for patient_id in data_dict:
-        if not data_processed_dict.__contains__(patient_id):
-            data_processed_dict[patient_id] = dict()
-        for visit_id in data_dict[patient_id]:
-            data_processed_dict[patient_id][visit_id] = dict()
-            for feature in data_dict[patient_id][visit_id]:
-                value = data_dict[patient_id][visit_id][feature]
-                if value == '-1':
-                    data_processed_dict[patient_id][visit_id][feature] = feature_fed_dict[feature]
-                else:
-                    data_processed_dict[patient_id][visit_id][feature] = value
-    return data_processed_dict
-
-
 def missing_rate_calc(data_dict):
     missing_dict = dict()
     # 建立字典
@@ -97,67 +46,148 @@ def missing_rate_calc(data_dict):
             row_count += 1
             for feature in data_dict[patient_id][visit_id]:
                 value = data_dict[patient_id][visit_id][feature]
-                if value == '-1':
+                if feature.__contains__('lost') and value == '1':
                     missing_dict[feature] += 1
     for feature in missing_dict:
         missing_dict[feature] = missing_dict[feature] / row_count
     return missing_dict
 
 
-def data_normalization(data_dict):
+def feature_discard(origin_data, feature_missing_rate, white_list, feature_threshold=0.3):
     """
-    对除了时间差外的所有数值型数据做Z变换
-    :param data_dict:
+    限于数据特点，必须要有一些可以豁免的白名单存在
+    :param origin_data:
+    :param feature_missing_rate:
+    :param white_list:
+    :param feature_threshold:
     :return:
     """
-    variance_dict = dict()
-    mean_dict = dict()
-    feature_attribute_dict = dict()
-    # 先扫描数据集，确定每个属性的类型（数值型Or分类型）
-    for patient in data_dict:
-        for visit_id in data_dict[patient]:
-            for feature in data_dict[patient][visit_id]:
-                if not feature_attribute_dict.__contains__(feature):
-                    feature_attribute_dict[feature] = 'categorical'
-                value = data_dict[patient][visit_id][feature]
-                if value == '-1':
-                    continue
-                if float(value) != 1.0 and float(value) != 0.0:
-                    feature_attribute_dict[feature] = 'numerical'
+    discard_item_set = set()
+    # 丢弃缺失值超过上限的数据
+    for patient_id in origin_data:
+        for visit_id in origin_data[patient_id]:
+            for item in feature_missing_rate:
+                missing_rate = float(feature_missing_rate[item])
+                if missing_rate > feature_threshold and not white_list.__contains__(item):
+                    actual_feature = item.split('_')[0]
+                    for item_name in origin_data[patient_id][visit_id]:
+                        if item_name.__contains__(actual_feature):
+                            discard_item_set.add(item_name)
+            break
+        break
+    for patient_id in origin_data:
+        for visit_id in origin_data[patient_id]:
+            for item_name in discard_item_set:
+                origin_data[patient_id][visit_id].pop(item_name)
+    return origin_data
 
-    # 计算每个变量的方差
-    count = 0
-    for patient in data_dict:
-        for visit_id in data_dict[patient]:
-            count += 1
-            for feature in data_dict[patient][visit_id]:
-                value = float(data_dict[patient][visit_id][feature])
-                if feature_attribute_dict[feature] == 'categorical' or feature == '时间差':
-                    continue
-                if not variance_dict.__contains__(feature):
-                    variance_dict[feature] = value * value
-                    mean_dict[feature] = value
+
+def feature_imputation(white_list_imputed_data):
+    """
+    由于缺失数据实在比较分散，策略如下
+    1. 在预测目标特征A的缺失值时，将剩余所有特征中的缺失值以dummy variable的形式编码，作为特征编入数据
+    2. 在预测完毕后，把所有的lost dummy variable删除
+    :param white_list_imputed_data:
+    :return:
+    """
+    target_data = copy.deepcopy(white_list_imputed_data)
+
+    # 构建预测列表
+    estimate_feature_list = list()
+    for patient_id in white_list_imputed_data:
+        for visit_id in white_list_imputed_data[patient_id]:
+            for feature in white_list_imputed_data[patient_id][visit_id]:
+                if feature.__contains__('lost'):
+                    estimate_feature_list.append(feature.split('_')[0])
+            break
+        break
+
+    for item in estimate_feature_list:
+        # 构建训练集与测试集，以及对应关系
+        mapping_dict = dict()
+        train_feature = list()
+        train_label = list()
+        test_feature = list()
+
+        # 构建训练集与测试集
+        for patient_id in white_list_imputed_data:
+            for visit_id in white_list_imputed_data[patient_id]:
+                feature_tuple = list()
+                if white_list_imputed_data[patient_id][visit_id][item+'_lost'] == '1':
+                    for feature in white_list_imputed_data[patient_id][visit_id]:
+                        if feature.__contains__(item):
+                            continue
+                        else:
+                            value = white_list_imputed_data[patient_id][visit_id][feature]
+                            feature_tuple.append(value)
+                    test_feature.append(feature_tuple)
+                    mapping_dict[len(test_feature)-1] = [patient_id, visit_id]
                 else:
-                    variance_dict[feature] += value * value
-                    mean_dict[feature] += value
-    for feature in mean_dict:
-        mean_dict[feature] = mean_dict[feature] / count
-        variance_dict[feature] = (variance_dict[feature] / count) ** 0.5
+                    for feature in white_list_imputed_data[patient_id][visit_id]:
+                        if feature.__contains__(item):
+                            value = white_list_imputed_data[patient_id][visit_id][feature]
+                            if feature == item+'_1':
+                                if value == '1':
+                                    train_label.append(0)
+                            elif feature == item+'_2':
+                                if value == '1':
+                                    train_label.append(1)
+                            elif feature == item+'_3':
+                                if value == '1':
+                                    train_label.append(2)
+                            elif feature == item + '_lost':
+                                if value == '1':
+                                    pass
+                            else:
+                                if item == '钠' or item == '钙':
+                                    continue
+                                print(item)
+                                print(feature)
+                                raise ValueError('')
+                        else:
+                            value = white_list_imputed_data[patient_id][visit_id][feature]
+                            feature_tuple.append(value)
+                    train_feature.append(feature_tuple)
+        train_feature = np.array(train_feature, dtype=np.float64)
+        test_feature = np.array(test_feature, dtype=np.float64)
+        train_label = np.array(train_label, dtype=np.int16)
+        if len(test_feature) == 0:
+            continue
 
-    # z变换
-    for patient_id in data_dict:
-        for visit_id in data_dict[patient_id]:
-            for feature in mean_dict:
-                value = float(data_dict[patient_id][visit_id][feature])
-                value = (value - mean_dict[feature]) / variance_dict[feature]
-                data_dict[patient_id][visit_id][feature] = value
-    return data_dict
+        clf = LogisticRegression(random_state=0, solver='lbfgs', multi_class='multinomial')
+        clf = clf.fit(train_feature, train_label)
+        print(item)
+        test_label = clf.predict(test_feature)
+        for i in mapping_dict:
+            patient_id, visit_id = mapping_dict[i]
+            if test_label[i] == 0:
+                target_data[patient_id][visit_id][item+'_1'] = 1
+            elif test_label[i] == 1:
+                target_data[patient_id][visit_id][item + '_2'] = 1
+            elif test_label[i] == 2:
+                target_data[patient_id][visit_id][item + '_3'] = 1
+            else:
+                raise ValueError('')
+
+    pop_feature_list = list()
+    for patient_id in white_list_imputed_data:
+        for visit_id in white_list_imputed_data[patient_id]:
+            for feature in white_list_imputed_data[patient_id][visit_id]:
+                if feature.__contains__('lost'):
+                    pop_feature_list.append(feature)
+            break
+        break
+    for patient_id in white_list_imputed_data:
+        for visit_id in white_list_imputed_data[patient_id]:
+            for feature in pop_feature_list:
+                white_list_imputed_data[patient_id][visit_id].pop(feature)
+    return target_data
 
 
-def feature_pre_process(origin_data, save_path):
+def feature_pre_process(origin_data, save_path, white_list):
     missing_dict = missing_rate_calc(origin_data)
-    imputed_data = data_impute(origin_data)
-    normalized_data = data_normalization(imputed_data)
+    discarded_data = feature_discard(origin_data, missing_dict, white_list)
+    imputed_data = feature_imputation(discarded_data)
     feature_list = list()
     for patient_id in origin_data:
         for visit_id in origin_data[patient_id]:
@@ -171,19 +201,12 @@ def feature_pre_process(origin_data, save_path):
     for item in feature_list:
         head.append(item)
     data_to_write.append(head)
-    missing_list = list()
-    for item in head:
-        if missing_dict.__contains__(item):
-            missing_list.append(missing_dict[item])
-        else:
-            missing_list.append('None')
-    data_to_write.append(missing_list)
 
-    for patient_id in normalized_data:
-        for visit_id in normalized_data[patient_id]:
+    for patient_id in imputed_data:
+        for visit_id in imputed_data[patient_id]:
             row = [patient_id, visit_id]
             for i in range(2, len(head)):
-                row.append(normalized_data[patient_id][visit_id][head[i]])
+                row.append(imputed_data[patient_id][visit_id][head[i]])
             data_to_write.append(row)
 
     with open(save_path, 'w', encoding='gbk', newline='') as file:
@@ -193,10 +216,12 @@ def feature_pre_process(origin_data, save_path):
 
 
 def main():
-    source_data_path = os.path.abspath('..\\..\\resource\\二值化的长期纵向数据.csv')
+    source_data_path = os.path.abspath('..\\..\\resource\\二值化后的长期纵向数据.csv')
     feature_path = os.path.abspath('..\\..\\resource\\预处理中间结果.csv')
+    # 丢失率很高但是不能丢失的
+    white_list = ['脑利钠肽前体_lost', '肌钙蛋白T_lost', 'C-反应蛋白测定_lost', '射血分数_lost']
     origin_data = read_data(source_data_path)
-    feature_pre_process(origin_data, feature_path)
+    feature_pre_process(origin_data, feature_path, white_list)
 
 
 if __name__ == "__main__":
