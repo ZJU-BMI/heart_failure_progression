@@ -47,7 +47,7 @@ def get_data(path):
             if int(train_set[i][0][j]) == 1:
                 # 原始的数据设计保证一个i中，只会有一个j==1
                 train_feature.append(train_set[i][1])
-                train_label.append(j+1)
+                train_label.append(j)
 
     train_feature = np.array(train_feature, dtype=np.float)
     train_label = np.array(train_label, dtype=np.float)
@@ -71,16 +71,16 @@ def event_convert(test_prediction, test_patient_dict):
         patient_id, visit_id = test_patient_dict[i]
         if not event_dict.__contains__(patient_id):
             event_dict[patient_id] = dict()
-        if test_prediction[i] == 1:
+        if test_prediction[i] == 0:
             event_dict[patient_id][visit_id] = '心功能1级'
             one += 1
-        if test_prediction[i] == 2:
+        if test_prediction[i] == 1:
             event_dict[patient_id][visit_id] = '心功能2级'
             two += 1
-        if test_prediction[i] == 3:
+        if test_prediction[i] == 2:
             event_dict[patient_id][visit_id] = '心功能3级'
             three += 1
-        if test_prediction[i] == 4:
+        if test_prediction[i] == 3:
             event_dict[patient_id][visit_id] = '心功能3级'
             four += 1
     print('class 1: {}'.format(one))
@@ -103,17 +103,11 @@ def data_regenerate(event_dict, origin_file, write_path):
     with open(origin_file, 'r', encoding='gbk', newline='') as file:
         csv_reader = csv.reader(file)
         head_flag = True
-        skip_second_line = True
         for line in csv_reader:
             if head_flag:
                 for i in range(2, len(line)):
                     feature_dict[i] = line[i]
                 head_flag = False
-                continue
-
-            # 跳过第二行（丢失率说明）
-            if skip_second_line:
-                skip_second_line = False
                 continue
 
             patient_id = line[0]
@@ -170,7 +164,7 @@ def main():
     source_data_path = os.path.abspath('..\\..\\resource\\预处理中间结果.csv')
     save_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
     train_feature, train_label, test_feature, test_patient_dict = get_data(source_data_path)
-    class_weight = {1: 4.1, 2: 1, 3: 2.7, 4: 4}
+    class_weight = {0: 4.1, 1: 1, 2: 2.7, 3: 4}
     clf = LinearSVC(tol=1e-4, max_iter=500, class_weight=class_weight, C=0.1)
     clf.fit(train_feature, train_label)
     test_prediction = clf.predict(test_feature)

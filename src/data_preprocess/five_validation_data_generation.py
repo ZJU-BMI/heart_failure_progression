@@ -6,17 +6,7 @@ import numpy as np
 from itertools import islice
 
 
-def data_filter(feature_data, label_data, data_length):
-    # eliminate data with insufficient admission record
-    invalid_patient_set = set()
-    for patient_id in feature_data:
-        # 如果一个RNN的需要三次作为输入，则符合条件的数据至少要入院四次，不然第三次入院产生的标签是没有意义的
-        if len(feature_data[patient_id]) <= data_length:
-            invalid_patient_set.add(patient_id)
-    for patient_id in invalid_patient_set:
-        feature_data.pop(patient_id)
-        label_data.pop(patient_id)
-
+def data_filter(feature_data, label_data, max_data_length):
     # sort feature and label
     medium_data_dict = dict()
     for patient_id in feature_data:
@@ -29,15 +19,25 @@ def data_filter(feature_data, label_data, data_length):
                 data = [feature_data[patient_id][visit_id], label_data[patient_id][visit_id]]
                 medium_data_dict[patient_id].append(data)
 
-    # get truncated feature sequence and label
+    # 数据的截断与补齐
     data_dict = dict()
     for patient_id in medium_data_dict:
         feature = list()
+        feature_num = len(medium_data_dict[patient_id][0][0])
 
-        for i in range(data_length):
-            feature.append(medium_data_dict[patient_id][i][0])
-        label = medium_data_dict[patient_id][data_length - 1][1]
-        data_dict[patient_id] = [feature, label]
+        # 最后一次输入其实是作为标签用的，其特征事实上不发挥作用
+        valid_length = len(medium_data_dict[patient_id])-1
+        if valid_length > max_data_length:
+            valid_length = max_data_length
+        for i in range(max_data_length):
+            if i < valid_length:
+                feature.append(medium_data_dict[patient_id][i][0])
+            else:
+                feature.append(['0' for _ in range(feature_num)])
+        # 最后一次有效输入所对应的标签事实上是真实标签,
+        label = medium_data_dict[patient_id][valid_length-1][1]
+        feature = np.array(feature, dtype=np.int16)
+        data_dict[patient_id] = [feature, label, valid_length]
 
     data_list = list()
     for patient_id in data_dict:
@@ -103,14 +103,19 @@ def six_fold_generate(feature_path, label_path, data_length):
                 label_dict[key] = list()
             label_dict[key].append(item[1][key])
 
+    sequence_length_list = list()
+    for item in raw_data:
+        sequence_length_list.append(item[2])
+
     fold_size = len(feature_list) // 6
     fold_list = list()
     for i in range(6):
         fold_feature = feature_list[i * fold_size: (i + 1) * fold_size]
+        fold_length = sequence_length_list[i * fold_size: (i + 1) * fold_size]
         single_fold_label = dict()
         for key in label_dict:
             single_fold_label[key] = label_dict[key][i*fold_size: (i+1)*fold_size]
-        fold_list.append([fold_feature, single_fold_label])
+        fold_list.append([fold_feature, single_fold_label, fold_length])
     return fold_list
 
 
@@ -135,6 +140,12 @@ def main(data_length):
                 feature_np = np.array(feature, dtype=np.float64)
                 single_feature_path = 'length_{}_repeat_{}_fold_{}_feature.npy'.format(str(data_length), str(j), str(i))
                 np.save(os.path.join(save_root, single_feature_path), feature_np)
+
+                sequence_length = fold_list[i][2]
+                sequence_length = np.array(sequence_length, dtype=np.int32)
+                sequence_length_path = \
+                    'length_{}_repeat_{}_fold_{}_sequence_length.npy'.format(str(data_length), str(j), str(i))
+                np.save(os.path.join(save_root, sequence_length_path), sequence_length)
                 label = fold_list[i][1]
                 for key in label:
                     single_label_path = 'length_{}_repeat_{}_fold_{}_{}_label.npy'.format(str(data_length), str(j),
@@ -146,6 +157,13 @@ def main(data_length):
                 feature_np = np.array(feature, dtype=np.float64)
                 single_feature_path = 'length_{}_test_feature.npy'.format(str(data_length))
                 np.save(os.path.join(save_root, single_feature_path), feature_np)
+
+                sequence_length = fold_list[i][2]
+                sequence_length = np.array(sequence_length, dtype=np.int32)
+                sequence_length_path = \
+                    'length_{}_test_sequence_length.npy'.format(str(data_length), str(j), str(i))
+                np.save(os.path.join(save_root, sequence_length_path), sequence_length)
+
                 label = fold_list[i][1]
                 for key in label:
                     single_label_path = 'length_{}_test_{}_label.npy'.format(str(data_length), key)
@@ -154,4 +172,4 @@ def main(data_length):
 
 
 if __name__ == '__main__':
-    main(3)
+    main(10)

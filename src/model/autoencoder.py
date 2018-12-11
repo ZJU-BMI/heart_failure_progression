@@ -19,8 +19,8 @@ def denoising_autoencoder(phase_indicator, context_placeholder, event_placeholde
         # 上面的步骤可以视为已经加入了噪声，因此此处只需要降维即可
         input_x = tf.concat([context_dropout, event_placeholder], axis=2)
         if autoencoder_value > 0:
-            with tf.variable_scope('auto_encoder'):
-                autoencoder_weight = tf.get_variable('autoencoder', [num_context + num_event, autoencoder_value],
+            with tf.variable_scope('auto_encoder_parameter'):
+                autoencoder_weight = tf.get_variable('weight', [num_context + num_event, autoencoder_value],
                                                      initializer=auto_encoder_initializer)
 
             unstacked_list = tf.unstack(input_x, axis=0)

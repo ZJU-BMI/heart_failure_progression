@@ -2,8 +2,8 @@ import tensorflow as tf
 from sklearn import metrics
 import numpy as np
 from experiment.read_data import DataSource
-from hawkes_rnn import hawkes_rnn_model
-from vanilla_rnn import vanilla_rnn_model
+from dynamic_hawkes_rnn import hawkes_rnn_model
+from dynamic_vanilla_rnn import vanilla_rnn_model
 from rnn_cell import RawCell, LSTMCell, GRUCell
 import os
 import csv
@@ -29,7 +29,7 @@ def get_metrics(prediction, label, threshold=0.2):
 
 
 def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
-    length = shared_hyperparameter['length']
+    max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
     keep_rate_hidden = shared_hyperparameter['keep_rate_input']
@@ -50,7 +50,8 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
 
     g = tf.Graph()
     with g.as_default():
-        phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
+        with tf.name_scope('phase'):
+            phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
         if cell_type == 'gru':
             cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
                            num_hidden=num_hidden)
@@ -63,19 +64,20 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
         else:
             raise ValueError('cell type invalid')
 
-        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator = \
-            vanilla_rnn_model(num_steps=length, num_hidden=num_hidden, cell=cell, keep_rate_input=keep_rate_input,
-                              dae_weight=dae_weight, phase_indicator=phase_indicator, num_context=context_num,
-                              num_event=event_num, auto_encoder_value=autoencoder)
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            sequence_length = vanilla_rnn_model(num_steps=max_length, num_hidden=num_hidden, cell=cell,
+                                                keep_rate_input=keep_rate_input, dae_weight=dae_weight,
+                                                phase_indicator=phase_indicator, num_context=context_num,
+                                                autoencoder_length=autoencoder, num_event=event_num,)
         train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
-                     phase_indicator, train_node]
+                     phase_indicator, sequence_length, train_node]
         five_fold_validation_default(shared_hyperparameter, node_list, model_type='vanilla_rnn', model_name=model)
 
 
-def hawkes_rnn_test(shared_hyperparameter, cell_type, markov_assumption, autoencoder, model):
-    length = shared_hyperparameter['length']
+def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
+    max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
     keep_rate_hidden = shared_hyperparameter['keep_rate_input']
@@ -83,7 +85,6 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, markov_assumption, autoenc
     context_num = shared_hyperparameter['context_num']
     event_num = shared_hyperparameter['event_num']
     dae_weight = shared_hyperparameter['dae_weight']
-    shared_hyperparameter['markov_assumption'] = markov_assumption
     shared_hyperparameter['model'] = model
     shared_hyperparameter['cell_type'] = cell_type
     shared_hyperparameter['autoencoder'] = autoencoder
@@ -110,14 +111,15 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, markov_assumption, autoenc
             raise ValueError('cell type invalid')
 
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            task_type, time_interval, mutual_intensity, base_intensity = \
-            hawkes_rnn_model(num_steps=length, num_hidden=num_hidden, cell=cell, keep_rate_input=keep_rate_input,
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            hawkes_rnn_model(num_steps=max_length, num_hidden=num_hidden, cell=cell, keep_rate_input=keep_rate_input,
                              dae_weight=dae_weight, phase_indicator=phase_indicator, num_context=context_num,
-                             num_event=event_num, markov_assumption=markov_assumption, auto_encoder_value=autoencoder)
+                             num_event=event_num, autoencoder_length=autoencoder)
         train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
-                     phase_indicator, task_type, time_interval, mutual_intensity, base_intensity, train_node]
+                     phase_indicator, task_index, time_list, mutual_intensity, base_intensity, sequence_length,
+                     train_node]
         five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
 
 
@@ -127,10 +129,7 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
 
     mutual_intensity_path = experiment_config['mutual_intensity_path']
     base_intensity_path = experiment_config['base_intensity_path']
-    # model_path_folder = experiment_config['model_path']
-    # model_path = os.path.join(model_path_folder, 'repeat_{}_fold_{}_task_name_{}.ckpt'.format(repeat, fold,
-    # task_name))
-
+    model_graph_save_path = experiment_config['model_graph_save_path']
     mutual_intensity_value = np.load(mutual_intensity_path)
     base_intensity_value = np.load(base_intensity_path)
     event_id_dict = experiment_config['event_id_dict']
@@ -140,10 +139,11 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
     config.gpu_options.per_process_gpu_memory_fraction = 0.5
     config.gpu_options.allow_growth = True
 
-    init = tf.initialize_all_variables()
-
+    init = tf.global_variables_initializer()
     with tf.Session(config=config) as sess:
         sess.run(init)
+        tf.summary.FileWriter(model_graph_save_path + '\\'+model, sess.graph)
+        print('tensorboard --logdir="'+model_graph_save_path+'')
         no_improve_count = 0
         minimum_loss = 10000
 
@@ -211,67 +211,70 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, mo
                         base_intensity_value):
     # phase = 1 测试
     if phase == 1:
-        input_event, input_context, input_t = data_object.get_test_feature()
-        input_y = data_object.get_test_label()[task_name]
+        input_event, input_context, input_t, input_sequence_length = data_object.get_test_feature()
+        input_y = data_object.get_test_label(task_name)
         input_y = input_y[:, np.newaxis]
         phase_value = 1
-        batch_size_value = len(input_event)
-        time_interval_value = np.zeros([len(input_event), len(input_event[0])])
-        for i in range(len(input_event)):
-            for j in range(len(input_event[i])):
+        batch_size_value = len(input_event[0])
+        time_interval_value = np.zeros([len(input_event[0]), len(input_event)])
+        for i in range(len(input_event[0])):
+            for j in range(len(input_event)):
                 if j == 0:
                     time_interval_value[i][j] = 0
-                else:
+                elif j < input_sequence_length[i]:
                     time_interval_value[i][j] = input_t[i][j] - input_t[i][j-1]
     # phase == 2 训练
     elif phase == 2:
-        input_event, input_context, input_t, input_y = data_object.get_next_batch(task_name)
+        input_event, input_context, input_t, input_sequence_length, input_y = data_object.get_next_batch(task_name)
         phase_value = -1
-        batch_size_value = len(input_event)
-        time_interval_value = np.zeros([len(input_event), len(input_event[0])])
-        for i in range(len(input_event)):
-            for j in range(len(input_event[i])):
+        batch_size_value = len(input_event[0])
+        time_interval_value = np.zeros([len(input_event[0]), len(input_event)])
+        for i in range(len(input_event[0])):
+            for j in range(len(input_event)):
                 if j == 0:
                     time_interval_value[i][j] = 0
-                else:
+                elif j < input_sequence_length[i]:
                     time_interval_value[i][j] = input_t[i][j] - input_t[i][j-1]
     # phase == 3 验证
     elif phase == 3:
-        input_event, input_context, input_t = data_object.get_validation_feature()
-        input_y = data_object.get_validation_label()[task_name]
+        input_event, input_context, input_t, input_sequence_length = data_object.get_validation_feature()
+        input_y = data_object.get_validation_label(task_name)
         input_y = input_y[:, np.newaxis]
         phase_value = 1
-        batch_size_value = len(input_event)
-        time_interval_value = np.zeros([len(input_event), len(input_event[0])])
-        for i in range(len(input_event)):
-            for j in range(len(input_event[i])):
+        batch_size_value = len(input_event[0])
+        time_interval_value = np.zeros([len(input_event[0]), len(input_event)])
+        for i in range(len(input_event[0])):
+            for j in range(len(input_event)):
                 if j == 0:
                     time_interval_value[i][j] = 0
-                else:
+                elif j < input_sequence_length[i]:
                     time_interval_value[i][j] = input_t[i][j] - input_t[i][j-1]
 
     else:
         raise ValueError('invalid phase')
 
     if model == 'vanilla_rnn':
-        _, _, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, _ = node_list
+        _, _, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, sequence_length, \
+            _ = node_list
         feed_dict = {event_placeholder: input_event, y_placeholder: input_y, batch_size: batch_size_value,
-                     phase_indicator: phase_value, context_placeholder: input_context}
+                     phase_indicator: phase_value, context_placeholder: input_context,
+                     sequence_length: input_sequence_length}
         return feed_dict, input_y
     elif model == 'hawkes_rnn':
-        _, _, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, task_type, \
-            time_interval, mutual_intensity, base_intensity, _ = node_list
+        _, _, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, task_index_, \
+            time_list, mutual_intensity, base_intensity, sequence_length, _ = node_list
         feed_dict = {event_placeholder: input_event, y_placeholder: input_y, batch_size: batch_size_value,
-                     time_interval: time_interval_value, phase_indicator: phase_value,
+                     time_list: time_interval_value, phase_indicator: phase_value,
                      context_placeholder: input_context, mutual_intensity: mutual_intensity_value,
-                     base_intensity: base_intensity_value, task_type: task_index}
+                     base_intensity: base_intensity_value, task_index_: task_index,
+                     sequence_length: input_sequence_length}
         return feed_dict, input_y
     else:
         raise ValueError('invalid model name')
 
 
 def five_fold_validation_default(experiment_config, node_list, model_type, model_name):
-    length = experiment_config['length']
+    max_length = experiment_config['max_sequence_length']
     data_folder = experiment_config['data_folder']
     batch_size = experiment_config['batch_size']
     event_list = experiment_config['event_list']
@@ -293,8 +296,8 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
                     print(key+': '+str(experiment_config[key]))
 
                 # 从洗过的数据中读取数据
-                data_source = DataSource(data_folder, data_length=length, validate_fold_num=j, batch_size=batch_size,
-                                         repeat=i)
+                data_source = DataSource(data_folder, data_length=max_length, validate_fold_num=j,
+                                         batch_size=batch_size, repeat=i)
 
                 best_result = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
                                         validate_step_interval=validate_step_interval, model=model_type,
@@ -350,17 +353,18 @@ def set_hyperparameter(time_window, full_event_test=False):
     mutual_intensity_path = os.path.abspath('..\\..\\resource\\hawkes_result\\mutual.npy')
     base_intensity_path = os.path.abspath('..\\..\\resource\\hawkes_result\\base.npy')
     model_save_path = os.path.abspath('..\\..\\resource\\model_cache')
+    model_graph_save_path = os.path.abspath('..\\..\\resource\\model_diagram')
 
-    length = 3
+    max_sequence_length = 10
     batch_size = 256
-    learning_rate = 0.001
+    learning_rate = 0.01
     max_iter = 20000
     validate_step_interval = 20
     num_hidden = 32
     keep_rate_hidden = 1
     keep_rate_input = 0.8
     dae_weight = 1
-    context_num = 107
+    context_num = 189
     event_num = 11
 
     event_id_dict = dict()
@@ -386,14 +390,15 @@ def set_hyperparameter(time_window, full_event_test=False):
     for item in label_candidate:
         event_list.append(time_window + item)
 
-    experiment_configure = {'data_folder': data_folder, 'length': length, 'num_hidden': num_hidden,
+    experiment_configure = {'data_folder': data_folder, 'max_sequence_length': max_sequence_length,
                             'batch_size': batch_size, 'learning_rate': learning_rate, 'dae_weight': dae_weight,
                             'max_iter': max_iter, 'validate_step_interval': validate_step_interval,
                             'keep_rate_input': keep_rate_input, 'keep_rate_hidden': keep_rate_hidden,
                             'event_list': event_list, 'mutual_intensity_path': mutual_intensity_path,
                             'base_intensity_path': base_intensity_path, 'event_id_dict': event_id_dict,
                             'event_num': event_num, 'context_num': context_num,
-                            'model_path': model_save_path}
+                            'model_path': model_save_path, 'num_hidden': num_hidden,
+                            'model_graph_save_path': model_graph_save_path}
     return experiment_configure
 
 
@@ -404,31 +409,21 @@ def main():
         for item in time_window_list:
             config = set_hyperparameter(full_event_test=True, time_window=item)
             if test_model == 0:
-                model = 'hawkes_rnn_markov_false_autoencoder_true'
+                model = 'hawkes_rnn_autoencoder_true'
                 new_graph = tf.Graph()
                 with new_graph.as_default():
-                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=False, autoencoder=15, model=model)
+                    hawkes_rnn_test(config, cell_type=cell_type, autoencoder=15, model=model)
             elif test_model == 1:
                 new_graph = tf.Graph()
-                model = 'hawkes_rnn_markov_true_autoencoder_true'
+                model = 'hawkes_rnn_autoencoder_false'
                 with new_graph.as_default():
-                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=True, autoencoder=15, model=model)
+                    hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
             elif test_model == 2:
-                new_graph = tf.Graph()
-                model = 'hawkes_rnn_markov_false_autoencoder_false'
-                with new_graph.as_default():
-                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=False, autoencoder=-1, model=model)
-            elif test_model == 3:
-                new_graph = tf.Graph()
-                model = 'hawkes_rnn_markov_true_autoencoder_false'
-                with new_graph.as_default():
-                    hawkes_rnn_test(config, cell_type=cell_type, markov_assumption=True, autoencoder=-1, model=model)
-            elif test_model == 4:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_true'
                 with new_graph.as_default():
                     vanilla_rnn_test(config, cell_type=cell_type, autoencoder=15, model=model)
-            elif test_model == 5:
+            elif test_model == 3:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_false'
                 with new_graph.as_default():

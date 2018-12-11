@@ -27,6 +27,7 @@ from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import nest
 import autoencoder
+import numpy as np
 from rnn_cell import GRUCell, LSTMCell, RawCell
 
 # 拼接矩阵的shape
@@ -309,7 +310,7 @@ def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_
         bias = tf.get_variable('bias', [])
 
     with tf.name_scope('loss'):
-        unnormalized_prediction = tf.matmul(final_state, output_weight) + bias
+        unnormalized_prediction = tf.matmul(output_final[-1], output_weight) + bias
         loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
 
         if autoencoder_length > 0:
@@ -323,7 +324,8 @@ def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_
     with tf.name_scope('prediction'):
         prediction = tf.sigmoid(unnormalized_prediction)
 
-    return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator
+    return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+        sequence_length
 
 
 def unit_test():
@@ -335,6 +337,7 @@ def unit_test():
     keep_rate_input = 0.8
     dae_weight = 1
     autoencoder_length = 15
+
     if autoencoder_length > 0:
         input_length = autoencoder_length
     else:
@@ -345,26 +348,43 @@ def unit_test():
     phase_indicator = tf.placeholder(tf.int16, [])
 
     # 试验阶段
-    test_cell_type = 0
+    test_cell_type = 2
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
-        vanilla_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                          phase_indicator, autoencoder_length)
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            sequence_length = vanilla_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
+                                                dae_weight, phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden,  weight_initializer=initializer_o, bias_initializer=initializer_z,
                          keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
-        vanilla_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                          phase_indicator, autoencoder_length)
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            sequence_length = vanilla_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
+                                                dae_weight, phase_indicator, autoencoder_length)
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                           bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
-        vanilla_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                          phase_indicator, autoencoder_length)
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            sequence_length = vanilla_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
+                                                dae_weight, phase_indicator, autoencoder_length)
     else:
-        print('No Cell Test')
+        raise ValueError('')
     print('finish')
+
+    batch_size_value = 32
+    event = np.random.normal(0, 1, [num_steps, batch_size_value, num_event])
+    context_ = np.random.normal(0, 1, [num_steps, batch_size_value, num_context])
+
+    sequence_length_value = np.random.randint(1, 8, [batch_size_value])
+    feed_dict = {event_placeholder: event, context_placeholder: context_, batch_size: batch_size_value,
+                 phase_indicator: 1, sequence_length: sequence_length_value}
+
+    init = tf.global_variables_initializer()
+    with tf.Session() as sess:
+        sess.run(init)
+        pred = sess.run(prediction, feed_dict=feed_dict)
+        print(pred)
 
 
 if __name__ == '__main__':

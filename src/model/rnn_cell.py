@@ -55,7 +55,7 @@ class RawCell(object):
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
-        with tf.variable_scope('raw_rnn_cell_parameter'):
+        with tf.variable_scope('raw_para'):
             weight = tf.get_variable('w', [num_hidden, input_length+num_hidden],
                                      initializer=weight_initializer)
             bias = tf.get_variable('b', [num_hidden, 1], initializer=bias_initializer)
@@ -103,7 +103,7 @@ class GRUCell(object):
 
     def __call__(self, input_x, recurrent_state):
         """
-        :param input_x: TBD format
+        :param input_x: BD format
         :param recurrent_state:
         :return: new hidden state: BD format
         """
@@ -139,7 +139,7 @@ class GRUCell(object):
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
-        with tf.variable_scope('parameter'):
+        with tf.variable_scope('gru_para'):
             weight_z = tf.get_variable('w_z', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
             weight_r = tf.get_variable('w_r', [num_hidden, input_length+num_hidden],
@@ -194,7 +194,8 @@ class LSTMCell(object):
 
     def __call__(self, input_x, recurrent_state):
         """
-        :param input_x: BTD format
+        :param input_x: BD format
+        :param recurrent_state: BD format
         :return: new hidden state: BD format
         """
         keep_probability = self.__keep_probability
@@ -233,7 +234,7 @@ class LSTMCell(object):
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
-        with tf.variable_scope('parameter'):
+        with tf.variable_scope('lstm_para'):
             weight_f = tf.get_variable('w_f', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
             weight_i = tf.get_variable('w_i', [num_hidden, input_length+num_hidden],
@@ -279,13 +280,13 @@ def unit_test():
     initializer_o = tf.initializers.orthogonal()
     initializer_z = tf.initializers.zeros()
 
-    # input should be BTD format
-    input_x = tf.placeholder(tf.float32, [None, num_steps, input_length], name='event_input')
+    # input should be TBD format
+    input_x = tf.placeholder(tf.float32, [num_steps, None, input_length], name='event_input')
     phase_indicator = tf.placeholder(tf.int32, [], name='phase_indicator')
 
     # 试验阶段
     test_cell_type = 0
-    input_x_list = tf.unstack(input_x, axis=1)
+    input_x_list = tf.unstack(input_x, axis=0)
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)

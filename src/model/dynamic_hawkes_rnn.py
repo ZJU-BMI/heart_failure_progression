@@ -14,6 +14,7 @@ from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import nest
 from rnn_cell import GRUCell, LSTMCell, RawCell
+import numpy as np
 
 
 # 拼接矩阵的shape
@@ -104,9 +105,10 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
     """
 
     # Python 动态类型特性：无法像静态类型语言一样在编译期完成类型检查，需要在运行阶段检查输入参数是否合法
-    rnn_cell_impl.assert_like_rnncell("cell", cell)
+    with tf.name_scope('cell_check'):
+        rnn_cell_impl.assert_like_rnncell("cell", cell)
 
-    with vs.variable_scope(scope or "rnn") as varscope:
+    with vs.variable_scope(scope or "hawkes_rnn") as varscope:
         # Create a new scope in which the caching device is either
         # determined by the parent scope, or is set to place the cached
         # Variable using the same placement as for the rest of the RNN.
@@ -116,22 +118,25 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
         trans_decay = tf.get_variable('trans_decay', [1, initial_state.shape[1]])
 
     # Just to find it in the graph.
-    sequence_length = array_ops.identity(sequence_length, name="sequence_length")
+    with tf.name_scope('sequence_length'):
+        sequence_length = array_ops.identity(sequence_length, name="sequence_length")
 
     state = initial_state
 
     # Construct an initial output
-    input_shape = array_ops.shape(inputs)
-    time_steps, batch_size = input_shape[0], input_shape[1]
-    const_time_step, const_batch_size = inputs.get_shape().as_list()[:2]
+    with tf.name_scope('input_shape'):
+        input_shape = array_ops.shape(inputs)
+        time_steps, batch_size = input_shape[0], input_shape[1]
+        const_time_step, const_batch_size = inputs.get_shape().as_list()[:2]
 
     # Prepare dynamic conditional copying of state & output
     def _create_zero_arrays(size):
         size = _concat(batch_size, size)
         return array_ops.zeros(array_ops.stack(size), _infer_state_dtype(state))
 
-    zero_output = _create_zero_arrays(cell.output_size)
-    time = array_ops.constant(0, dtype=dtypes.int32, name="time")
+    with tf.name_scope('prepare_ops'):
+        zero_output = _create_zero_arrays(cell.output_size)
+        time = array_ops.constant(0, dtype=dtypes.int32, name="time")
 
     with ops.name_scope("dynamic_rnn") as scope:
         base_name = scope
@@ -143,13 +148,14 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
                                                 element_shape=element_shape,
                                                 tensor_array_name=base_name + name)
 
-        output_ta = _create_ta("output",
-                               element_shape=(tensor_shape.TensorShape([const_batch_size])
-                                              .concatenate(_maybe_tensor_shape_from_tensor(cell.output_size))),
-                               dtype=_infer_state_dtype(state))
-        input_ta = _create_ta("input", element_shape=inputs.shape[1:], dtype=inputs.dtype)
-        # input_ta 赋值
-        input_ta = input_ta.unstack(inputs)
+        with tf.name_scope('prepare_io_ta'):
+            output_ta = _create_ta("output",
+                                   element_shape=(tensor_shape.TensorShape([const_batch_size])
+                                                  .concatenate(_maybe_tensor_shape_from_tensor(cell.output_size))),
+                                   dtype=_infer_state_dtype(state))
+            input_ta = _create_ta("input", element_shape=inputs.shape[1:], dtype=inputs.dtype)
+            # input_ta 赋值
+            input_ta = input_ta.unstack(inputs)
 
         def _time_step(time_, output_ta_t, state_):
             """Take a time step of the dynamic RNN.
@@ -163,17 +169,20 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
             """
 
             # 读取数据
-            input_t = input_ta.read(time_)
-            input_t.set_shape(inputs.get_shape().as_list()[1:])
+            with tf.name_scope('read_data'):
+                input_t = input_ta.read(time_)
+                input_t.set_shape(inputs.get_shape().as_list()[1:])
+
             call_cell = lambda: cell(input_t, state_)
 
             # 获得新数据
-            output_, new_state = _rnn_step(
-                time=time_,
-                sequence_length=sequence_length,
-                zero_output=zero_output,
-                state=state_,
-                call_cell=call_cell)
+            with tf.name_scope('new_state'):
+                output_, new_state = _rnn_step(
+                    time=time_,
+                    sequence_length=sequence_length,
+                    zero_output=zero_output,
+                    state=state_,
+                    call_cell=call_cell)
 
             with tf.name_scope('decay_node'):
                 intensity = calculate_intensity_full(time_interval_list=time_list, event_list=event_list, index=time,
@@ -181,7 +190,8 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
                                                      mutual_intensity_matrix=mutual_intensity)
                 new_state = new_state * intensity * trans_decay
 
-            output_ta_t = output_ta_t.write(time_, output_)
+            with tf.name_scope('write_out_ta'):
+                output_ta_t = output_ta_t.write(time_, output_)
             return time_ + 1, output_ta_t, new_state
 
         # Make sure that we run at least 1 step, if necessary, to ensure
@@ -235,9 +245,9 @@ def _rnn_step(time, sequence_length, zero_output, state, call_cell):
 
     def _copy_some_through(flat_new_output, flat_new_state):
         flat_new_output = [_copy_one_through(zero_output_, new_output_)
-            for zero_output_, new_output_ in zip(flat_zero_output, flat_new_output)]
+                           for zero_output_, new_output_ in zip(flat_zero_output, flat_new_output)]
         flat_new_state = [_copy_one_through(state_, new_state_)
-            for state_, new_state_ in zip(flat_state, flat_new_state)]
+                          for state_, new_state_ in zip(flat_state, flat_new_state)]
         return flat_new_output + flat_new_state
 
     new_output, new_state = call_cell()
@@ -283,63 +293,65 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
         loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
         其中 phase_indicator>0代表是测试期，<=0代表是训练期
     """
-    with tf.name_scope('vanilla_model'):
-        with tf.name_scope('data_source'):
-            # 标准输入规定为TBD
-            batch_size = tf.placeholder(tf.int32, [], name='batch_size')
-            event_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_event], name='event_placeholder')
-            context_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_context], name='context_placeholder')
-            base_intensity = tf.placeholder(tf.float32, [num_event, 1], name='base_intensity')
-            mutual_intensity = tf.placeholder(tf.float32, [num_event, num_event], name='mutual_intensity')
-            time_list = tf.placeholder(tf.int32, [None, num_steps], name='time_list')
-            task_index = tf.placeholder(tf.int32, [], name='task_index')
-            sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
-            y_placeholder = tf.placeholder(tf.float32, [None, 1], name='y_placeholder')
-            initial_state = cell.get_initial_state(batch_size)
+    with tf.name_scope('data_source'):
+        # 标准输入规定为TBD
+        batch_size = tf.placeholder(tf.int32, [], name='batch_size')
+        event_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_event], name='event_placeholder')
+        context_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_context], name='context_placeholder')
+        base_intensity = tf.placeholder(tf.float32, [num_event, 1], name='base_intensity')
+        mutual_intensity = tf.placeholder(tf.float32, [num_event, num_event], name='mutual_intensity')
+        time_list = tf.placeholder(tf.int32, [None, num_steps], name='time_list')
+        task_index = tf.placeholder(tf.int32, [], name='task_index')
+        sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
+        y_placeholder = tf.placeholder(tf.float32, [None, 1], name='y_placeholder')
 
-        with tf.name_scope('autoencoder'):
-            # input_x 用于计算重构原始向量时产生的误差
-            processed_input, origin_input, autoencoder_weight = autoencoder.denoising_autoencoder(
-                phase_indicator, context_placeholder, event_placeholder, keep_rate_input, autoencoder_length,
-                autoencoder_initializer)
+        initial_state = cell.get_initial_state(batch_size)
 
-        with tf.name_scope('vanilla_rnn'):
-            output_final, final_state = _hawkes_dynamic_rnn(cell, processed_input, sequence_length, initial_state,
-                                                            base_intensity=base_intensity, task_index=task_index,
-                                                            mutual_intensity=mutual_intensity, time_list=time_list,
-                                                            event_list=event_placeholder)
+    with tf.name_scope('autoencoder'):
+        # input_x 用于计算重构原始向量时产生的误差
+        processed_input, origin_input, autoencoder_weight = autoencoder.denoising_autoencoder(
+            phase_indicator, context_placeholder, event_placeholder, keep_rate_input, autoencoder_length,
+            autoencoder_initializer)
 
-    with tf.variable_scope('output_layer'):
+    with tf.name_scope('hawkes_rnn'):
+        output_final, final_state = _hawkes_dynamic_rnn(cell, processed_input, sequence_length, initial_state,
+                                                        base_intensity=base_intensity, task_index=task_index,
+                                                        mutual_intensity=mutual_intensity, time_list=time_list,
+                                                        event_list=event_placeholder)
+
+    with tf.variable_scope('output_para'):
         output_weight = tf.get_variable("weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
         bias = tf.get_variable('bias', [])
 
-    with tf.name_scope('loss'):
-        unnormalized_prediction = tf.matmul(final_state, output_weight) + bias
-        loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
-
-        if autoencoder_length > 0:
-            loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=origin_input,
-                                                    weight=autoencoder_weight)
-        else:
-            loss_dae = 0
-
-        loss = loss_pred + loss_dae * dae_weight
-
     with tf.name_scope('prediction'):
+        unnormalized_prediction = tf.matmul(output_final[-1], output_weight) + bias
         prediction = tf.sigmoid(unnormalized_prediction)
 
-    return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator
+    with tf.name_scope('loss'):
+        with tf.name_scope('pred_loss'):
+            loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
+
+        with tf.name_scope('dae_loss'):
+            if autoencoder_length > 0:
+                loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=origin_input,
+                                                    weight=autoencoder_weight)
+            else:
+                loss_dae = 0
+
+        with tf.name_scope('loss_sum'):
+            loss = loss_pred + loss_dae * dae_weight
+
+    return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+        base_intensity, mutual_intensity, time_list, task_index, sequence_length
 
 
 def calculate_intensity_full(time_interval_list, event_list, base_intensity_vector, mutual_intensity_matrix, index,
-                             task_index, omega=tf.constant(-0.006)):
+                             task_index, omega=-0.006):
     # 如果是第一次入院，感觉intensity怎么取都不太合适，想想还是直接不用了算了
     if index == 0:
-        return 0
+        with tf.name_scope('0_intensity'):
+            full_intensity_sum = tf.zeros([array_ops.shape(time_interval_list)[0], 1])
     else:
-        intensity_sum = tf.zeros([array_ops.shape(time_interval_list)[1], 1])
-        intensity_sum += base_intensity_vector[task_index]
-
         def intensity(current_index, intensity_sum_):
             time_interval = tf.to_float(time_interval_list[:, index] - time_interval_list[:, current_index])
             time = tf.expand_dims(tf.exp(time_interval * omega), axis=1)
@@ -350,21 +362,27 @@ def calculate_intensity_full(time_interval_list, event_list, base_intensity_vect
             intensity_sum_ += mutual_intensity*time
             return current_index+1, intensity_sum_
 
-        current_time = tf.constant(0)
-        _, full_intensity_sum = tf.while_loop(
-            cond=lambda current_index_, *_: current_index_ < index,
-            body=intensity,
-            loop_vars=(current_time, intensity_sum),
-            parallel_iterations=32,
-            maximum_iterations=100,
-            swap_memory=False)
+        with tf.name_scope('hawkes_intensity'):
+            with tf.name_scope('base_intensity'):
+                intensity_sum = tf.zeros([array_ops.shape(time_interval_list)[0], 1])
+                intensity_sum += base_intensity_vector[task_index]
+
+            with tf.name_scope('mutual_intensity'):
+                current_time = tf.constant(0)
+                _, full_intensity_sum = tf.while_loop(
+                    cond=lambda current_index_, *_: current_index_ < index,
+                    body=intensity,
+                    loop_vars=(current_time, intensity_sum),
+                    parallel_iterations=32,
+                    maximum_iterations=100,
+                    swap_memory=False)
 
     return full_intensity_sum
 
 
 def unit_test():
     num_hidden = 10
-    num_steps = 20
+    num_steps = 30
     keep_prob = 1.0
     num_context = 50
     num_event = 30
@@ -381,26 +399,49 @@ def unit_test():
     phase_indicator = tf.placeholder(tf.int16, [])
 
     # 试验阶段
-    test_cell_type = 0
+    test_cell_type = 2
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
-        hawkes_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                         phase_indicator, autoencoder_length)
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            hawkes_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                             phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden, weight_initializer=initializer_o, bias_initializer=initializer_z,
                          keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
-        hawkes_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                         phase_indicator, autoencoder_length)
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            hawkes_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                             phase_indicator, autoencoder_length)
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                           bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
-        hawkes_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                         phase_indicator, autoencoder_length)
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            hawkes_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                             phase_indicator, autoencoder_length)
     else:
-        print('No Cell Test')
-    print('finish')
+        raise ValueError('')
+
+    batch_size_value = 32
+    event = np.random.normal(0, 1, [num_steps, batch_size_value, num_event])
+    context_ = np.random.normal(0, 1, [num_steps, batch_size_value, num_context])
+    base_intensity_value = np.random.uniform(0, 1, [num_event, 1])
+    mutual_intensity_value = np.random.uniform(0, 1, [num_event, num_event])
+    time_list_value = np.random.uniform(0, 1, [batch_size_value, num_steps])
+
+    sequence_length_value = np.random.randint(1, 8, [batch_size_value])
+    feed_dict = {event_placeholder: event, context_placeholder: context_, batch_size: batch_size_value,
+                 phase_indicator: 1, sequence_length: sequence_length_value, base_intensity: base_intensity_value,
+                 mutual_intensity: mutual_intensity_value, time_list: time_list_value, task_index: 0}
+
+    init = tf.global_variables_initializer()
+    with tf.Session() as sess:
+        sess.run(init)
+        pred = sess.run(prediction, feed_dict=feed_dict)
+        print(pred)
 
 
 if __name__ == '__main__':
