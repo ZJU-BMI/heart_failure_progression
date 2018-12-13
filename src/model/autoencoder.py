@@ -3,8 +3,17 @@ import tensorflow as tf
 
 
 def denoising_autoencoder(phase_indicator, context_placeholder, event_placeholder, keep_rate_input,
-                          autoencoder_value, auto_encoder_initializer):
-
+                          embedded_size, auto_encoder_initializer):
+    """
+    输入均为TBD格式
+    :param phase_indicator:
+    :param context_placeholder:
+    :param event_placeholder:
+    :param keep_rate_input:
+    :param embedded_size:
+    :param auto_encoder_initializer:
+    :return:
+    """
     num_context = context_placeholder.shape[2]
     num_event = event_placeholder.shape[2]
     with tf.name_scope('dropout'):
@@ -18,17 +27,17 @@ def denoising_autoencoder(phase_indicator, context_placeholder, event_placeholde
     with tf.name_scope('dae'):
         # 上面的步骤可以视为已经加入了噪声，因此此处只需要降维即可
         input_x = tf.concat([context_dropout, event_placeholder], axis=2)
-        if autoencoder_value > 0:
+        if embedded_size > 0:
             with tf.variable_scope('auto_encoder_parameter'):
-                autoencoder_weight = tf.get_variable('weight', [num_context + num_event, autoencoder_value],
+                autoencoder_weight = tf.get_variable('weight', [num_context + num_event, embedded_size],
                                                      initializer=auto_encoder_initializer)
 
             unstacked_list = tf.unstack(input_x, axis=0)
             coded_list = list()
             for single_input in unstacked_list:
-                coded_list.append(tf.sigmoid(tf.transpose(tf.matmul(single_input, autoencoder_weight))))
+                coded_list.append(tf.sigmoid(tf.matmul(single_input, autoencoder_weight)))
             # 确保输入格式为 BTD
-            processed_input = tf.transpose(tf.convert_to_tensor(coded_list), [0, 2, 1])
+            processed_input = tf.convert_to_tensor(coded_list)
 
         else:
             processed_input = input_x
@@ -50,3 +59,21 @@ def autoencoder_loss(origin_input, embedding, weight):
     return loss
 
 
+def unit_test():
+    num_steps = 10
+    batch_size = None
+    embedding_size = 20
+    event_num = 15
+    context_num = 25
+    keep_rate = 1.0
+    init = tf.initializers.random_normal()
+
+    phase_indicator = tf.placeholder(tf.int16, [])
+    event = tf.placeholder(tf.float32, [num_steps, batch_size, event_num])
+    context = tf.placeholder(tf.float32, [num_steps, batch_size, context_num])
+    denoising_autoencoder(phase_indicator, context, event, keep_rate,
+                          embedding_size, init)
+
+
+if __name__ == '__main__':
+    unit_test()

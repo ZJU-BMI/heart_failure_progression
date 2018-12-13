@@ -68,7 +68,7 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
             sequence_length = vanilla_rnn_model(num_steps=max_length, num_hidden=num_hidden, cell=cell,
                                                 keep_rate_input=keep_rate_input, dae_weight=dae_weight,
                                                 phase_indicator=phase_indicator, num_context=context_num,
-                                                autoencoder_length=autoencoder, num_event=event_num,)
+                                                embedded_size=autoencoder, num_event=event_num,)
         train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
@@ -182,14 +182,16 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
                 print(result)
 
                 # 虽然Test Set可以直接被算出，但是不打印，测试过程中无法看到Test Set性能的变化
-                # 之所以这么设计，是为了不用频繁的读写模型，提高效率
+                # 因此也就不存在"偷看标签"的问题
+                # 之所以这么设计，主要是因为标准的Early Stop模型要不断的存取模型副本，然后训练完了再计算测试集性能
+                # 这个跑法有点麻烦，而且我们其实也不是特别需要把模型存起来
 
                 # 性能记录与Early Stop的实现，前三次不记录（防止出现训练了还不如不训练的情况）
                 if step < validate_step_interval * 3:
                     continue
 
                 if validate_loss >= minimum_loss:
-                    # 连续20次测试Loss或AUC没有优化，则停止训练
+                    # 连续20次验证集性能无差别，则停止训练
                     if no_improve_count >= validate_step_interval * 20:
                         break
                     else:
@@ -355,9 +357,9 @@ def set_hyperparameter(time_window, full_event_test=False):
     model_save_path = os.path.abspath('..\\..\\resource\\model_cache')
     model_graph_save_path = os.path.abspath('..\\..\\resource\\model_diagram')
 
-    max_sequence_length = 10
+    max_sequence_length = 20
     batch_size = 256
-    learning_rate = 0.01
+    learning_rate = 0.001
     max_iter = 20000
     validate_step_interval = 20
     num_hidden = 32
@@ -381,7 +383,7 @@ def set_hyperparameter(time_window, full_event_test=False):
     event_id_dict['肺病'] = 10
 
     if full_event_test:
-        label_candidate = ['心功能3级', '心功能2级', '心功能1级', '心功能4级', '再血管化手术', '死亡', '癌症',
+        label_candidate = ['心功能2级', '心功能3级', '心功能1级', '心功能4级', '再血管化手术', '死亡', '癌症',
                            '糖尿病入院', '肺病', '肾病入院']
     else:
         label_candidate = ['心功能2级', ]
@@ -403,7 +405,7 @@ def set_hyperparameter(time_window, full_event_test=False):
 
 
 def main():
-    time_window_list = ['三月', '一年']
+    time_window_list = ['一年', '三月', ]
     test_model = 0
     for cell_type in ['lstm', 'gru', 'raw']:
         for item in time_window_list:

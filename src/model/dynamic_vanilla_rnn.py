@@ -41,34 +41,6 @@ def _maybe_tensor_shape_from_tensor(shape):
         return shape
 
 
-def _infer_state_dtype(state, explicit_dtype=None):
-    """Infer the dtype of an RNN state.
-
-    Args:
-        explicit_dtype: explicitly declared dtype or None.
-        state: RNN's hidden state. Must be a Tensor or a nested iterable containing
-        Tensors.
-    Returns:
-        dtype: inferred dtype of hidden state.
-
-    Raises:
-        ValueError: if `state` has heterogeneous dtypes or is empty.
-    """
-    if explicit_dtype is not None:
-        return explicit_dtype
-    elif nest.is_sequence(state):
-        inferred_dtypes = [element.dtype for element in nest.flatten(state)]
-        if not inferred_dtypes:
-            raise ValueError("Unable to infer dtype from empty state.")
-        all_same = all([x == inferred_dtypes[0] for x in inferred_dtypes])
-        if not all_same:
-            raise ValueError( "State has tensors of different inferred_dtypes. Unable to infer a "
-                              "single representative dtype.")
-        return inferred_dtypes[0]
-    else:
-        return state.dtype
-
-
 def _should_cache():
     """Returns True if a default caching device should be set, otherwise False."""
     if context.executing_eagerly():
@@ -136,72 +108,70 @@ def _vanilla_dynamic_rnn(cell, inputs, sequence_length, initial_state, parallel_
         # Prepare dynamic conditional copying of state & output
         def _create_zero_arrays(size):
             size = _concat(batch_size, size)
-            return array_ops.zeros(
-                array_ops.stack(size), _infer_state_dtype(state))
+            return array_ops.zeros(array_ops.stack(size), state.dtype)
 
         zero_output = _create_zero_arrays(cell.output_size)
-
         time = array_ops.constant(0, dtype=dtypes.int32, name="time")
 
-        with ops.name_scope("dynamic_rnn") as scope:
+        with ops.name_scope("vanilla") as scope:
             base_name = scope
 
-        # TensorArray，为了while_loop所准备的特定数据结构
-        def _create_ta(name, element_shape, dtype):
-            return tensor_array_ops.TensorArray(dtype=dtype,
-                                                size=time_steps,
-                                                element_shape=element_shape,
-                                                tensor_array_name=base_name + name)
+            # TensorArray，为了while_loop所准备的特定数据结构
+            def _create_ta(name, element_shape, dtype):
+                return tensor_array_ops.TensorArray(dtype=dtype,
+                                                    size=time_steps,
+                                                    element_shape=element_shape,
+                                                    tensor_array_name=base_name + name)
 
-        output_ta = _create_ta("output",
-                               element_shape=(tensor_shape.TensorShape([const_batch_size])
-                                              .concatenate(_maybe_tensor_shape_from_tensor(cell.output_size))),
-                               dtype=_infer_state_dtype(state))
-        input_ta = _create_ta("input", element_shape=inputs.shape[1:], dtype=inputs.dtype)
-        # input_ta 赋值
-        input_ta = input_ta.unstack(inputs)
+            output_ta = _create_ta("output",
+                                   element_shape=(tensor_shape.TensorShape([const_batch_size])
+                                                  .concatenate(_maybe_tensor_shape_from_tensor(cell.output_size))),
+                                   dtype=state.dtype)
+            input_ta = _create_ta("input", element_shape=inputs.shape[1:], dtype=inputs.dtype)
+            # input_ta 赋值
+            input_ta = input_ta.unstack(inputs)
 
-        def _time_step(time_, output_ta_t, state_):
-            """Take a time step of the dynamic RNN.
+            def _time_step(time_, output_ta_t, state_):
+                """Take a time step of the dynamic RNN.
 
-            Args:
-              time_: int32 scalar Tensor.
-              output_ta_t: A TensorArray that represent the output.
+                Args:
+                  time_: int32 scalar Tensor.
+                  output_ta_t: A TensorArray that represent the output.
 
-            Returns:
-              The tuple (time + 1, output_ta_t with updated flow, new_state).
-            """
+                Returns:
+                  The tuple (time + 1, output_ta_t with updated flow, new_state).
+                """
 
-            # 读取数据
-            input_t = input_ta.read(time_)
-            input_t.set_shape(inputs.get_shape().as_list()[1:])
-            call_cell = lambda: cell(input_t, state_)
+                # 读取数据
+                input_t = input_ta.read(time_)
+                input_t.set_shape(inputs.get_shape().as_list()[1:])
+                call_cell = lambda: cell(input_t, state_)
 
-            output_, new_state = _rnn_step(
-                time=time_,
-                sequence_length=sequence_length,
-                zero_output=zero_output,
-                state=state_,
-                call_cell=call_cell)
+                output_, new_state = _rnn_step(
+                    time=time_,
+                    sequence_length=sequence_length,
+                    zero_output=zero_output,
+                    state=state_,
+                    call_cell=call_cell)
 
-            output_ta_t = output_ta_t.write(time_, output_)
-            return time_ + 1, output_ta_t, new_state
+                output_ta_t = output_ta_t.write(time_, output_)
+                return time_ + 1, output_ta_t, new_state
 
-        # Make sure that we run at least 1 step, if necessary, to ensure
-        # the TensorArrays pick up the dynamic shape.
-        loop_bound = time_steps
+            # Make sure that we run at least 1 step, if necessary, to ensure
+            # the TensorArrays pick up the dynamic shape.
+            loop_bound = time_steps
 
-        _, output_final_ta, final_state = control_flow_ops.while_loop(
-            cond=lambda time_, *_: time_ < loop_bound,
-            body=_time_step,
-            loop_vars=(time, output_ta, state),
-            parallel_iterations=parallel_iterations,
-            maximum_iterations=time_steps,
-            swap_memory=swap_memory)
+            _, output_final_ta, final_state = control_flow_ops.while_loop(
+                cond=lambda time_, *_: time_ < loop_bound,
+                body=_time_step,
+                loop_vars=(time, output_ta, state),
+                parallel_iterations=parallel_iterations,
+                maximum_iterations=time_steps,
+                swap_memory=swap_memory)
 
-        output_final = output_final_ta.stack()
-        shape = _concat([const_time_step, const_batch_size], cell.output_size, static=True)
-        output_final.set_shape(shape)
+            output_final = output_final_ta.stack()
+            shape = _concat([const_time_step, const_batch_size], cell.output_size, static=True)
+            output_final.set_shape(shape)
         return output_final, final_state
 
 
@@ -270,25 +240,25 @@ def _rnn_step(time, sequence_length, zero_output, state, call_cell):
 
 
 def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                      phase_indicator, autoencoder_length, autoencoder_initializer=tf.initializers.orthogonal()):
+                      phase_indicator, embedded_size, autoencoder_initializer=tf.initializers.orthogonal()):
     """
-        :param cell:
-        :param num_steps:
-        :param num_hidden:
-        :param num_context: 要求Context变量全部变为二值变量
-        :param num_event:
-        :param dae_weight:
-        :param keep_rate_input:
-        :param phase_indicator:
-        :param autoencoder_length: 大于0时执行对输入的自编码，值即为最终降到的维度
-        :param autoencoder_initializer:
-        :return:
-        loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
-        其中 phase_indicator>0代表是测试期，<=0代表是训练期
-        """
+    标准输入规定为TBD
+    :param cell:
+    :param num_steps:
+    :param num_hidden:
+    :param num_context: 要求Context变量全部变为二值变量
+    :param num_event:
+    :param dae_weight:
+    :param keep_rate_input:
+    :param phase_indicator:
+    :param embedded_size: 大于0时执行对输入的自编码，值即为最终降到的维度
+    :param autoencoder_initializer:
+    :return:
+    loss, prediction, x_placeholder, y_placeholder, batch_size, phase_indicator
+    其中 phase_indicator>0代表是测试期，<=0代表是训练期
+    """
     with tf.name_scope('vanilla_model'):
         with tf.name_scope('data_source'):
-            # 标准输入规定为TBD
             batch_size = tf.placeholder(tf.int32, [], name='batch_size')
             event_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_event], name='event_placeholder')
             context_placeholder = tf.placeholder(tf.float32, [num_steps, None, num_context], name='context_placeholder')
@@ -299,21 +269,34 @@ def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_
         with tf.name_scope('autoencoder'):
             # input_x 用于计算重构原始向量时产生的误差
             processed_input, origin_input, autoencoder_weight = autoencoder.denoising_autoencoder(
-                phase_indicator, context_placeholder, event_placeholder, keep_rate_input, autoencoder_length,
+                phase_indicator, context_placeholder, event_placeholder, keep_rate_input, embedded_size,
                 autoencoder_initializer)
 
         with tf.name_scope('vanilla_rnn'):
             output_final, final_state = _vanilla_dynamic_rnn(cell, processed_input, sequence_length, initial_state)
+
+            # 在使用时LSTM时比较麻烦，因为state里同时包含了hidden state和cell state，只有后者是需要输出的
+            # 因此需要额外需要做一个split。这种写法非常不优雅，但是我想了一想，也没什么更好的办法
+            # 做split时，需要特别注意一下state里到底谁前谁后
+            output_length = output_final.shape[2].value
+            state_length = final_state.shape[1].value
+            if output_length == state_length:
+                # 不需要做任何事情
+                pass
+            elif output_length * 2 == state_length:
+                final_state = tf.split(final_state, 2, axis=1)[0]
+            else:
+                raise ValueError('Invalid Size')
 
     with tf.variable_scope('output_layer'):
         output_weight = tf.get_variable("weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
         bias = tf.get_variable('bias', [])
 
     with tf.name_scope('loss'):
-        unnormalized_prediction = tf.matmul(output_final[-1], output_weight) + bias
+        unnormalized_prediction = tf.matmul(final_state, output_weight) + bias
         loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
 
-        if autoencoder_length > 0:
+        if embedded_size > 0:
             loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=origin_input,
                                                     weight=autoencoder_weight)
         else:
@@ -333,13 +316,13 @@ def unit_test():
     num_steps = 20
     keep_prob = 1.0
     num_context = 50
-    num_event = 20
+    num_event = 25
     keep_rate_input = 0.8
     dae_weight = 1
-    autoencoder_length = 15
+    embedded_size = 15
 
-    if autoencoder_length > 0:
-        input_length = autoencoder_length
+    if embedded_size > 0:
+        input_length = embedded_size
     else:
         input_length = num_event+num_context
 
@@ -354,20 +337,20 @@ def unit_test():
                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             sequence_length = vanilla_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
-                                                dae_weight, phase_indicator, autoencoder_length)
+                                                dae_weight, phase_indicator, embedded_size)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden,  weight_initializer=initializer_o, bias_initializer=initializer_z,
                          keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             sequence_length = vanilla_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
-                                                dae_weight, phase_indicator, autoencoder_length)
+                                                dae_weight, phase_indicator, embedded_size)
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                           bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             sequence_length = vanilla_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
-                                                dae_weight, phase_indicator, autoencoder_length)
+                                                dae_weight, phase_indicator, embedded_size)
     else:
         raise ValueError('')
     print('finish')

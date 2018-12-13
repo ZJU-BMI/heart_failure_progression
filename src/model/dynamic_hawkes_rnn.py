@@ -81,7 +81,7 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
       task_index: a placeholder
       base_intensity: a placeholder
       inputs: The RNN inputs.
-        Time Major Tensor with Shape [batch_size, max_time, Depth]
+        Time Major Tensor with Shape [max_time, batch_size, Depth]
       sequence_length:  An int32/int64 vector sized `[batch_size]`
       initial_state: (optional) An initial state for the RNN.
         If `cell.state_size` is an integer, this must be
@@ -138,7 +138,7 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
         zero_output = _create_zero_arrays(cell.output_size)
         time = array_ops.constant(0, dtype=dtypes.int32, name="time")
 
-    with ops.name_scope("dynamic_rnn") as scope:
+    with ops.name_scope("hawkes_rnn") as scope:
         base_name = scope
 
         # TensorArray，为了while_loop所准备的特定数据结构
@@ -188,7 +188,9 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
                 intensity = calculate_intensity_full(time_interval_list=time_list, event_list=event_list, index=time,
                                                      base_intensity_vector=base_intensity, task_index=task_index,
                                                      mutual_intensity_matrix=mutual_intensity)
-                new_state = new_state * intensity * trans_decay
+                copy_cond = time >= sequence_length
+                new_state_decay = new_state * intensity * trans_decay
+                new_state = array_ops.where(copy_cond, new_state_decay, new_state)
 
             with tf.name_scope('write_out_ta'):
                 output_ta_t = output_ta_t.write(time_, output_)
@@ -318,13 +320,25 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
                                                         base_intensity=base_intensity, task_index=task_index,
                                                         mutual_intensity=mutual_intensity, time_list=time_list,
                                                         event_list=event_placeholder)
+        # 在使用时LSTM时比较麻烦，因为state里同时包含了hidden state和cell state，只有后者是需要输出的
+        # 因此需要额外需要做一个split。这种写法非常不优雅，但是我想了一想，也没什么更好的办法
+        # 做split时，需要特别注意一下state里到底谁前谁后
+        output_length = output_final.shape[2].value
+        state_length = final_state.shape[1].value
+        if output_length == state_length:
+            # 不需要做任何事情
+            pass
+        elif output_length * 2 == state_length:
+            final_state = tf.split(final_state, 2, axis=1)[0]
+        else:
+            raise ValueError('Invalid Size')
 
     with tf.variable_scope('output_para'):
         output_weight = tf.get_variable("weight", [num_hidden, 1], initializer=tf.initializers.orthogonal())
         bias = tf.get_variable('bias', [])
 
     with tf.name_scope('prediction'):
-        unnormalized_prediction = tf.matmul(output_final[-1], output_weight) + bias
+        unnormalized_prediction = tf.matmul(final_state, output_weight) + bias
         prediction = tf.sigmoid(unnormalized_prediction)
 
     with tf.name_scope('loss'):
@@ -334,7 +348,7 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
         with tf.name_scope('dae_loss'):
             if autoencoder_length > 0:
                 loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=origin_input,
-                                                    weight=autoencoder_weight)
+                                                        weight=autoencoder_weight)
             else:
                 loss_dae = 0
 
@@ -382,7 +396,7 @@ def calculate_intensity_full(time_interval_list, event_list, base_intensity_vect
 
 def unit_test():
     num_hidden = 10
-    num_steps = 30
+    num_steps = 20
     keep_prob = 1.0
     num_context = 50
     num_event = 30
@@ -399,7 +413,7 @@ def unit_test():
     phase_indicator = tf.placeholder(tf.int16, [])
 
     # 试验阶段
-    test_cell_type = 2
+    test_cell_type = 1
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)

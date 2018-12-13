@@ -55,7 +55,7 @@ class RawCell(object):
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
-        with tf.variable_scope('raw_para'):
+        with tf.variable_scope('raw_para' ):
             weight = tf.get_variable('w', [num_hidden, input_length+num_hidden],
                                      initializer=weight_initializer)
             bias = tf.get_variable('b', [num_hidden, 1], initializer=bias_initializer)
