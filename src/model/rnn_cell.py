@@ -8,12 +8,13 @@ class RawCell(object):
     和标准的GRU Cell基本一致
     使用了arXiv 1603.05118 Recurrent Dropout without Memory Loss中所提及的对Hidden State的正则化策略
     """
-    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator,
+    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator, name,
                  weight_initializer=tf.initializers.orthogonal(),
                  bias_initializer=tf.initializers.zeros(),
                  activation=tf.tanh):
         """
         :param num_hidden:
+        :param name: 之所以设定这个参数，是为了要创建多层rnn时，能够在计算图中区分cell，避免错误的reuse
         :param input_length:
         :param weight_initializer:
         :param bias_initializer:
@@ -28,7 +29,7 @@ class RawCell(object):
         self.__phase_indicator = phase_indicator
         self.__variable_dict = None
         self.__activation = activation
-
+        self.__name = name
         self.__build()
 
     def __call__(self, input_x, recurrent_state):
@@ -55,7 +56,7 @@ class RawCell(object):
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
-        with tf.variable_scope('raw_para' ):
+        with tf.variable_scope('raw_para_'+self.__name):
             weight = tf.get_variable('w', [num_hidden, input_length+num_hidden],
                                      initializer=weight_initializer)
             bias = tf.get_variable('b', [num_hidden, 1], initializer=bias_initializer)
@@ -78,12 +79,13 @@ class RawCell(object):
 
 
 class GRUCell(object):
-    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator,
+    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator, name,
                  weight_initializer=tf.initializers.orthogonal(),
                  bias_initializer=tf.initializers.zeros(),
                  activation=tf.tanh):
         """
         :param num_hidden:
+        :param name: 之所以设定这个参数，是为了要创建多层rnn时，能够在计算图中区分cell，避免错误的reuse
         :param input_length:
         :param weight_initializer:
         :param bias_initializer:
@@ -98,7 +100,7 @@ class GRUCell(object):
         self.__phase_indicator = phase_indicator
         self.__variable_dict = None
         self.__activation = activation
-
+        self.__name = name
         self.__build()
 
     def __call__(self, input_x, recurrent_state):
@@ -139,7 +141,7 @@ class GRUCell(object):
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
-        with tf.variable_scope('gru_para'):
+        with tf.variable_scope('gru_para_'+self.__name):
             weight_z = tf.get_variable('w_z', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
             weight_r = tf.get_variable('w_r', [num_hidden, input_length+num_hidden],
@@ -169,7 +171,7 @@ class GRUCell(object):
 
 
 class LSTMCell(object):
-    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator,
+    def __init__(self, num_hidden, input_length, keep_prob, phase_indicator, name,
                  weight_initializer=tf.initializers.orthogonal(),
                  bias_initializer=tf.initializers.zeros(),
                  activation=tf.tanh):
@@ -178,6 +180,7 @@ class LSTMCell(object):
         :param input_length:
         :param weight_initializer:
         :param bias_initializer:
+        :param name: 之所以设定这个参数，是为了要创建多层rnn时，能够在计算图中区分cell，避免错误的reuse
         :param phase_indicator: phase_indicator>0代表是测试期，phase_indicator<=0代表是训练期
         :param keep_prob:
         """
@@ -189,7 +192,7 @@ class LSTMCell(object):
         self.__phase_indicator = phase_indicator
         self.__variable_dict = None
         self.__activation = activation
-
+        self.__name = name
         self.__build()
 
     def __call__(self, input_x, recurrent_state):
@@ -234,7 +237,7 @@ class LSTMCell(object):
         num_hidden = self.__num_hidden
         weight_initializer = self.__weight_initializer
         bias_initializer = self.__bias_initializer
-        with tf.variable_scope('lstm_para'):
+        with tf.variable_scope('lstm_para_'+self.__name):
             weight_f = tf.get_variable('w_f', [num_hidden, input_length+num_hidden],
                                        initializer=weight_initializer)
             weight_i = tf.get_variable('w_i', [num_hidden, input_length+num_hidden],
@@ -289,7 +292,8 @@ def unit_test():
     input_x_list = tf.unstack(input_x, axis=0)
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
-                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                         name='gru')
         recurrent_state = zero_state
         state_list = list()
         for i in range(num_steps):
@@ -297,7 +301,8 @@ def unit_test():
             state_list.append(output_state)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden,  weight_initializer=initializer_o, bias_initializer=initializer_z,
-                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
+                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator,
+                         name='raw')
         recurrent_state = zero_state
         state_list = list()
         for i in range(num_steps):
@@ -306,7 +311,8 @@ def unit_test():
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length,weight_initializer=initializer_o,
-                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                          name='lstm')
         hidden_state = zero_state
         context_state = tf.zeros([batch_size, num_hidden])
         recurrent_state = tf.concat([hidden_state, context_state], axis=1)

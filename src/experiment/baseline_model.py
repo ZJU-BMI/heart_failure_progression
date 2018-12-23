@@ -3,6 +3,7 @@
 import os
 import csv
 import random
+import numpy as np
 from sklearn.svm import LinearSVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression
@@ -20,9 +21,6 @@ def read_data(feature_path, label_path):
         csv_reader = csv.reader(file)
         head_flag = True
         for line in csv_reader:
-            # 跳过Missing Rate统计
-            if line[0] == 'None':
-                continue
             if head_flag:
                 for i in range(2, len(line)):
                     data_feature_dict[i] = line[i]
@@ -67,7 +65,7 @@ def read_data(feature_path, label_path):
             for key in data_dict[patient_id][visit_id]:
                 data_dict[patient_id][visit_id][key] = float(data_dict[patient_id][visit_id][key])
 
-    # 强制输出有序数列，丢失序列具体意义
+    # 强制输出有序数列
     output_dict = dict()
     for patient_id in data_dict:
         output_dict[patient_id] = list()
@@ -84,11 +82,24 @@ def read_data(feature_path, label_path):
     return output_dict
 
 
-def reconstruct_data(output_dict, target_visit=3):
+def reconstruct_data(output_dict):
+    # 找到最后一个有效数据，再往前数一个，即为所需数据
+    last_visit_dict = dict()
+    for patient_id in output_dict:
+        last_visit = 0
+        for i in range(100):
+            if i >= len(output_dict[patient_id]):
+                continue
+            feature = np.array(output_dict[patient_id][i][0])
+            feature_sum = feature.sum()
+            if feature_sum > 0:
+                last_visit = i
+        last_visit_dict[patient_id] = last_visit-1
+
     # 返回可以直接用于5折交叉验证的数据集
     data_list = list()
     for patient_id in output_dict:
-        data_list.append(output_dict[patient_id][target_visit-1])
+        data_list.append(output_dict[patient_id][last_visit_dict[patient_id]])
 
     random.shuffle(data_list)
     fold_size = len(data_list) // 5
@@ -124,7 +135,7 @@ def svm(train_feature, train_label, test_feature, test_label):
     else:
         auc = nominator/denominator
 
-    return auc, acc, pre, recall, f1
+    return auc, acc, pre, recall, f1, pred_score
 
 
 def lr(train_feature, train_label, test_feature, test_label):
@@ -145,7 +156,7 @@ def lr(train_feature, train_label, test_feature, test_label):
     recall = metrics.recall_score(test_label, pred_label)
     f1 = metrics.f1_score(test_label, pred_label)
 
-    return auc, acc, pre, recall, f1
+    return auc, acc, pre, recall, f1, pred_prob
 
 
 def rf(train_feature, train_label, test_feature, test_label):
@@ -166,7 +177,7 @@ def rf(train_feature, train_label, test_feature, test_label):
     recall = metrics.recall_score(test_label, pred_label)
     f1 = metrics.f1_score(test_label, pred_label)
 
-    return auc, acc, pre, recall, f1
+    return auc, acc, pre, recall, f1, pred_prob
 
 
 def mlp(train_feature, train_label, test_feature, test_label):
@@ -191,27 +202,30 @@ def mlp(train_feature, train_label, test_feature, test_label):
     recall = metrics.recall_score(test_label, pred_label)
     f1 = metrics.f1_score(test_label, pred_label)
 
-    return auc, acc, pre, recall, f1
+    return auc, acc, pre, recall, f1, pred_prob
 
 
 def main():
     label_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_标签.csv')
     feature_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
     output_dict = read_data(feature_path, label_path)
-    time_window = ['三月']
-    event_order = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术',
-                   '死亡', '肺病', '肾病入院', '癌症']
+    time_window = ['一年', '半年', '三月', '两年']
+    event_order = ['心功能2级', '心功能1级', '心功能3级', '心功能4级', '再血管化手术',
+                   '死亡', '肺病', '肾病入院', '癌症', '糖尿病']
     valid_event_set = set()
     for item_1 in time_window:
         for item_2 in event_order:
             valid_event_set.add(item_1+item_2)
 
-    result_list = list()
+    prediction_label_dict = dict()
 
+    result_list = list()
     result_list.append(['CV_Repeat', 'Test_Fold', 'Method', 'Event', 'AUC', 'ACC', 'PRECISION', 'RECALL', 'F1'])
     for repeat in range(0, 10):
+        prediction_label_dict[repeat] = dict()
         data_in_five_split = reconstruct_data(output_dict)
         for i in range(0, 5):
+            prediction_label_dict[repeat][i] = dict()
             # 构建五折交叉数据集
             train_feature = list()
             test_feature = list()
@@ -237,22 +251,52 @@ def main():
             for key in train_label_dict:
                 if not valid_event_set.__contains__(key):
                     continue
-                svm_result = svm(train_feature, train_label_dict[key], test_feature, test_label_dict[key])
-                auc, acc, pre, recall, f1 = svm_result
-                result_list.append([repeat, i, 'svm', key, auc, acc, pre, recall, f1])
+                prediction_label_dict[repeat][i][key] = dict()
                 lr_result = lr(train_feature, train_label_dict[key], test_feature, test_label_dict[key])
-                auc, acc, pre, recall, f1 = lr_result
+                auc, acc, pre, recall, f1, pred_prob = lr_result
                 result_list.append([repeat, i, 'lr', key, auc, acc, pre, recall, f1])
-                mlp_result = mlp(train_feature, train_label_dict[key], test_feature, test_label_dict[key])
-                auc, acc, pre, recall, f1 = mlp_result
-                result_list.append([repeat, i, 'mlp', key, auc, acc, pre, recall, f1])
-                rf_result = rf(train_feature, train_label_dict[key], test_feature, test_label_dict[key])
-                auc, acc, pre, recall, f1 = rf_result
-                result_list.append([repeat, i, 'rf', key, auc, acc, pre, recall, f1])
+                label_pred = np.concatenate([np.array(test_label_dict[key])[:, np.newaxis], pred_prob[:, np.newaxis]],
+                                            axis=1)
+                prediction_label_dict[repeat][i][key]['lr'] = label_pred
 
-    write_path = os.path.abspath('..\\..\\resource\\prediction_result\\非时序基线模型结果.csv')
+                svm_result = svm(train_feature, train_label_dict[key], test_feature, test_label_dict[key],)
+                auc, acc, pre, recall, f1, pred_score = svm_result
+                result_list.append([repeat, i, 'svm', key, auc, acc, pre, recall, f1])
+                label_pred = np.concatenate([np.array(test_label_dict[key])[:, np.newaxis], pred_score[:, np.newaxis]],
+                                            axis=1)
+                prediction_label_dict[repeat][i][key]['svm'] = label_pred
+
+                mlp_result = mlp(train_feature, train_label_dict[key], test_feature, test_label_dict[key])
+                auc, acc, pre, recall, f1, pred_prob = mlp_result
+                result_list.append([repeat, i, 'mlp', key, auc, acc, pre, recall, f1])
+                label_pred = np.concatenate([np.array(test_label_dict[key])[:, np.newaxis], pred_prob[:, np.newaxis]],
+                                            axis=1)
+                prediction_label_dict[repeat][i][key]['mlp'] = label_pred
+
+                rf_result = rf(train_feature, train_label_dict[key], test_feature, test_label_dict[key])
+                auc, acc, pre, recall, f1, pred_prob = rf_result
+                result_list.append([repeat, i, 'rf', key, auc, acc, pre, recall, f1])
+                label_pred = np.concatenate([np.array(test_label_dict[key])[:, np.newaxis], pred_prob[:, np.newaxis]],
+                                            axis=1)
+                prediction_label_dict[repeat][i][key]['rf'] = label_pred
+
+    write_path = os.path.abspath('..\\..\\resource\\prediction_result\\traditional_ml\\传统模型预测综合.csv')
     with open(write_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(result_list)
+
+    data_to_write = list()
+    data_to_write.append(['repeat', 'fold', 'task', 'model', 'no', 'label', 'prediction'])
+    for repeat in prediction_label_dict:
+        for i in prediction_label_dict[repeat]:
+            for task in prediction_label_dict[repeat][i]:
+                for model in prediction_label_dict[repeat][i][task]:
+                    for no in range(len(prediction_label_dict[repeat][i][task][model])):
+                        label, prediction = prediction_label_dict[repeat][i][task][model][no]
+                        row = [repeat, i, task, model, no, label, prediction]
+                        data_to_write.append(row)
+    write_path = os.path.abspath('..\\..\\resource\\prediction_result\\traditional_ml\\传统模型预测细节.csv')
+    with open(write_path, 'w', encoding='gbk', newline='') as file:
+        csv.writer(file).writerows(data_to_write)
     print('finish')
 
 

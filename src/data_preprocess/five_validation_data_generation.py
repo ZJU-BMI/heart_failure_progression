@@ -25,8 +25,10 @@ def data_filter(feature_data, label_data, max_data_length):
         feature = list()
         feature_num = len(medium_data_dict[patient_id][0][0])
 
-        # 最后一次输入其实是作为标签用的，其特征事实上不发挥作用
+        # 最后一次输入其实是作为标签用的，其特征事实上不发挥作用，因此有效长度是总长度-1
         valid_length = len(medium_data_dict[patient_id])-1
+
+        # 如果有效长度超过了最大长度，则截断，反之补零
         if valid_length > max_data_length:
             valid_length = max_data_length
         for i in range(max_data_length):
@@ -34,6 +36,7 @@ def data_filter(feature_data, label_data, max_data_length):
                 feature.append(medium_data_dict[patient_id][i][0])
             else:
                 feature.append(['0' for _ in range(feature_num)])
+
         # 最后一次有效输入所对应的标签事实上是真实标签,
         label = medium_data_dict[patient_id][valid_length-1][1]
         feature = np.array(feature, dtype=np.int16)
@@ -121,11 +124,14 @@ def six_fold_generate(feature_path, label_path, data_length):
 
 def main(data_length):
     """
-    由于本研究的特殊性，数据只做截断不做填充
-    例如：设定data_length为5，也就是要求病人有6次入院记录，其中前5次作为序列数据输入RNN，最后一次的Event作为Label
-    当一个病人有8次住院记录时，在第六次入院记录时进行数据截断，丢弃第7,8次住院记录。使用前5次入院作为输入
-    第六次的Event作为Label（已经完整的完成了标记）
-    当一个病人只有4次入院记录时，则弃用这一数据。显然，Data_Length拉的越长，数据越少
+    设定Data Length为n
+    则病人至少要有n+1次的有效住院记录，其中
+    1. 预处理后的长期纵向数据_特征 中取n个数据
+    2. 预处理后的长期纵向数据_标签 中取第n个数据作为标签（这个标签事实上是第n+1次入院的信息赋予的）
+
+    当病人的入院次数大于n+1时，数据在n处截断
+    当病人的入院次数小于n+1，比如病人的总入院次数是n-2
+    则，取病人的前n-3次入院数据作为feature，剩余部分补零。第n-3次入院对应的label为标签
     :return:
     """
     feature_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
@@ -172,4 +178,4 @@ def main(data_length):
 
 
 if __name__ == '__main__':
-    main(10)
+    main(6)

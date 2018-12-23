@@ -310,9 +310,8 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
         initial_state = cell.get_initial_state(batch_size)
 
     with tf.name_scope('autoencoder'):
-        # input_x 用于计算重构原始向量时产生的误差
-        processed_input, origin_input, autoencoder_weight = autoencoder.denoising_autoencoder(
-            phase_indicator, context_placeholder, event_placeholder, keep_rate_input, autoencoder_length,
+        processed_input, autoencoder_weight = autoencoder.denoising_autoencoder(
+            phase_indicator, context_placeholder, keep_rate_input, autoencoder_length,
             autoencoder_initializer)
 
     with tf.name_scope('hawkes_rnn'):
@@ -347,7 +346,7 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
 
         with tf.name_scope('dae_loss'):
             if autoencoder_length > 0:
-                loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=origin_input,
+                loss_dae = autoencoder.autoencoder_loss(embedding=processed_input, origin_input=context_placeholder,
                                                         weight=autoencoder_weight)
             else:
                 loss_dae = 0

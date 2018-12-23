@@ -10,10 +10,9 @@ def main():
 
     # 建立数据模板
     model_type_list = ['hawkes_rnn', 'vanilla_rnn']
-    cell_list = ['gru', 'lstm']
-    auto_encoder = ['true', 'false']
-    markov_assumption = ['true', 'false']
-    time_window = ['三月', '一年']
+    cell_list = ['lstm']
+    auto_encoder = ['true']
+    time_window = ['s']
     event_order = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术',
                    '死亡', '肺病', '糖尿病入院', '肾病入院', '癌症']
 
@@ -21,12 +20,11 @@ def main():
     folder_list = list()
     for model_name in model_type_list:
         if model_name == 'hawkes_rnn':
-            name_template = '{}_markov_{}_autoencoder_{}_{}'
+            name_template = '{}_autoencoder_{}_{}'
             for encoder in auto_encoder:
-                for markov in markov_assumption:
-                    for cell in cell_list:
-                        name = name_template.format(model_name, markov, encoder, cell)
-                        folder_list.append(name)
+                for cell in cell_list:
+                    name = name_template.format(model_name, encoder, cell)
+                    folder_list.append(name)
         elif model_name == 'vanilla_rnn':
             name_template = '{}_autoencoder_{}_{}'
             for encoder in auto_encoder:
@@ -50,6 +48,9 @@ def main():
         result_folder = os.path.join(root_path, model)
         file_list = os.listdir(result_folder)
         for file_name in file_list:
+            # 如果文件名不含result，文件记录的是预测细节，不能用
+            if not file_name.__contains__('result'):
+                continue
             file_path = os.path.join('%s\\%s' % (result_folder, file_name))
             task_type = file_name.split('_')[1]
 

@@ -4,7 +4,9 @@ import numpy as np
 from experiment.read_data import DataSource
 from dynamic_hawkes_rnn import hawkes_rnn_model
 from dynamic_vanilla_rnn import vanilla_rnn_model
+from dynamic_concat_hawkes_rnn import concat_hawkes_model
 from rnn_cell import RawCell, LSTMCell, GRUCell
+import random
 import os
 import csv
 import datetime
@@ -54,13 +56,13 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
             phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
         if cell_type == 'gru':
             cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                           num_hidden=num_hidden)
+                           num_hidden=num_hidden, name='gru')
         elif cell_type == 'lstm':
             cell = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                            num_hidden=num_hidden)
+                            num_hidden=num_hidden, name='lstm')
         elif cell_type == 'raw':
             cell = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                           num_hidden=num_hidden)
+                           num_hidden=num_hidden, name='raw')
         else:
             raise ValueError('cell type invalid')
 
@@ -100,13 +102,13 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
         phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
         if cell_type == 'gru':
             cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                           num_hidden=num_hidden)
+                           num_hidden=num_hidden, name='gru')
         elif cell_type == 'lstm':
             cell = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                            num_hidden=num_hidden)
+                            num_hidden=num_hidden, name='lstm')
         elif cell_type == 'raw':
             cell = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                           num_hidden=num_hidden)
+                           num_hidden=num_hidden, name='raw')
         else:
             raise ValueError('cell type invalid')
 
@@ -123,13 +125,66 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
         five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
 
 
+def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model):
+    max_length = shared_hyperparameter['max_sequence_length']
+    learning_rate = shared_hyperparameter['learning_rate']
+    keep_rate_input = shared_hyperparameter['keep_rate_input']
+    keep_rate_hidden = shared_hyperparameter['keep_rate_input']
+    num_hidden = shared_hyperparameter['num_hidden']
+    context_num = shared_hyperparameter['context_num']
+    event_num = shared_hyperparameter['event_num']
+    dae_weight = shared_hyperparameter['dae_weight']
+    shared_hyperparameter['model'] = model
+    shared_hyperparameter['cell_type'] = cell_type
+    shared_hyperparameter['autoencoder'] = autoencoder
+
+    g = tf.Graph()
+    model = model+'_'+cell_type
+    if autoencoder > 0:
+        input_length = autoencoder
+    else:
+        input_length = event_num + context_num
+
+    with g.as_default():
+        phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
+        if cell_type == 'gru':
+            cell_e = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
+                             num_hidden=num_hidden, name='gru_event')
+            cell_c = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
+                             num_hidden=num_hidden, name='gru_context')
+        elif cell_type == 'lstm':
+            cell_e = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
+                              num_hidden=num_hidden, name='lstm_event')
+            cell_c = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
+                              num_hidden=num_hidden, name='lstm_context')
+        elif cell_type == 'raw':
+            cell_e = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
+                             num_hidden=num_hidden, name='raw_event')
+            cell_c = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
+                             num_hidden=num_hidden, name='raw_context')
+        else:
+            raise ValueError('cell type invalid')
+
+        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            concat_hawkes_model(num_steps=max_length, num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                dae_weight=dae_weight, phase_indicator=phase_indicator, num_context=context_num,
+                                num_event=event_num, autoencoder_length=autoencoder, cell_context=cell_c,
+                                cell_event=cell_e)
+        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
+
+        node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
+                     phase_indicator, task_index, time_list, mutual_intensity, base_intensity, sequence_length,
+                     train_node]
+        five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
+
+
 def run_graph(data_source, max_step, node_list, validate_step_interval, task_name, experiment_config, model):
 
-    best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0}
+    best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0, 'prediction_label': list()}
 
     mutual_intensity_path = experiment_config['mutual_intensity_path']
     base_intensity_path = experiment_config['base_intensity_path']
-    model_graph_save_path = experiment_config['model_graph_save_path']
     mutual_intensity_value = np.load(mutual_intensity_path)
     base_intensity_value = np.load(base_intensity_path)
     event_id_dict = experiment_config['event_id_dict']
@@ -142,8 +197,6 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
     init = tf.global_variables_initializer()
     with tf.Session(config=config) as sess:
         sess.run(init)
-        tf.summary.FileWriter(model_graph_save_path + '\\'+model, sess.graph)
-        print('tensorboard --logdir="'+model_graph_save_path+'')
         no_improve_count = 0
         minimum_loss = 10000
 
@@ -199,12 +252,13 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
                 else:
                     no_improve_count = 0
                     minimum_loss = validate_loss
-
+                    test_label_prediction = np.concatenate([test_label, test_prediction], axis=1)
                     best_result['auc'] = auc
                     best_result['acc'] = accuracy
                     best_result['precision'] = precision
                     best_result['recall'] = recall
                     best_result['f1'] = f1
+                    best_result['prediction_label'] = test_label_prediction
 
     return best_result
 
@@ -288,9 +342,11 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
     # 五折交叉验证，跑十次
     for task in event_list:
         result_record = dict()
+        prediction_label_dict = dict()
         for j in range(5):
             if not result_record.__contains__(j):
                 result_record[j] = dict()
+                prediction_label_dict[j] = dict()
             for i in range(10):
                 # 输出当前实验设置
                 print('{}_repeat_{}_fold_{}_task_{}_log'.format(model_name, i, j, task))
@@ -304,10 +360,14 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
                 best_result = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
                                         validate_step_interval=validate_step_interval, model=model_type,
                                         experiment_config=experiment_config, task_name=task)
+
+                prediction_label = best_result.pop('prediction_label')
+                result_record[j][i] = best_result
+                prediction_label_dict[j][i] = prediction_label
                 print(task)
                 print(best_result)
-                result_record[j][i] = best_result
 
+                # 实时输出当前平均性能
                 current_auc_mean = 0
                 count = 0
                 for q in result_record:
@@ -315,15 +375,28 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
                         current_auc_mean += result_record[q][p]['auc']
                         count += 1
                 print('current auc mean = {}'.format(current_auc_mean/count))
-        save_result(save_folder, experiment_config, result_record, task)
+        save_result(save_folder, experiment_config, result_record, prediction_label_dict, task)
 
 
-def save_result(save_folder, experiment_config, result_record, task_name):
+def save_result(save_folder, experiment_config, result_record, prediction_label_dict, task_name):
 
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
-
     current_time = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+
+    # 存储预测与标签
+    save_path = os.path.join(save_folder, 'prediction_label_{}_{}.csv'.format(task_name, current_time))
+    data_to_write = [['label', 'prediction']]
+    for key in experiment_config:
+        data_to_write.append([key, experiment_config[key]])
+    for j in prediction_label_dict:
+        for i in prediction_label_dict[j]:
+            for k in range(len(prediction_label_dict[j][i])):
+                data_to_write.append(prediction_label_dict[j][i][k])
+    with open(save_path, 'w', encoding='gbk', newline='') as file:
+        csv.writer(file).writerows(data_to_write)
+
+    # 存储性能
     save_path = os.path.join(save_folder, 'result_{}_{}.csv'.format(task_name, current_time))
     data_to_write = []
     for key in experiment_config:
@@ -347,7 +420,8 @@ def save_result(save_folder, experiment_config, result_record, task_name):
         csv.writer(file).writerows(data_to_write)
 
 
-def set_hyperparameter(time_window, full_event_test=False):
+def set_hyperparameter(time_window, full_event_test=False, max_sequence_length=10, batch_size=256, dae_weight=1,
+                       learning_rate=0.001, num_hidden=32, keep_rate_hidden=1, keep_rate_input=0.8):
     """
     :return:
     """
@@ -357,17 +431,20 @@ def set_hyperparameter(time_window, full_event_test=False):
     model_save_path = os.path.abspath('..\\..\\resource\\model_cache')
     model_graph_save_path = os.path.abspath('..\\..\\resource\\model_diagram')
 
-    max_sequence_length = 20
-    batch_size = 256
-    learning_rate = 0.001
-    max_iter = 20000
+    max_iter = 10000
     validate_step_interval = 20
-    num_hidden = 32
-    keep_rate_hidden = 1
-    keep_rate_input = 0.8
-    dae_weight = 1
     context_num = 189
     event_num = 11
+
+    max_sequence_length = max_sequence_length
+    batch_size = batch_size
+    learning_rate = learning_rate
+    num_hidden = num_hidden
+    # cell内drop
+    keep_rate_hidden = keep_rate_hidden
+    # dae的keep prob
+    keep_rate_input = keep_rate_input
+    dae_weight = dae_weight
 
     event_id_dict = dict()
     event_id_dict['糖尿病入院'] = 0
@@ -404,12 +481,29 @@ def set_hyperparameter(time_window, full_event_test=False):
     return experiment_configure
 
 
-def main():
-    time_window_list = ['一年', '三月', ]
+def performance_test():
+    batch_size_list = [64, 128, 256, 512]
+    num_hidden_list = [16, 32, 64, 128]
+    autoencoder_list = [16, 32, 64, 128]
+    max_sequence_length = 3
+    batch_size = batch_size_list[random.randint(0, 3)]
+    learning_rate = 10 ** (random.uniform(-5, -2))
+    num_hidden = num_hidden_list[random.randint(0, 3)]
+    autoencoder = autoencoder_list[random.randint(0, 3)]
+    keep_rate_hidden = random.uniform(0.8, 1)
+    keep_rate_input = random.uniform(0.8, 1)
+    dae_weight = 10 ** (random.uniform(-1, 0))
+
+    time_window_list = ['一年']
     test_model = 0
-    for cell_type in ['lstm', 'gru', 'raw']:
+    for cell_type in ['gru']:
         for item in time_window_list:
-            config = set_hyperparameter(full_event_test=True, time_window=item)
+            config = set_hyperparameter(full_event_test=True, time_window=item, batch_size=batch_size,
+                                        max_sequence_length=max_sequence_length, learning_rate=learning_rate,
+                                        num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                        keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
+
+            # config = set_hyperparameter(full_event_test=True, time_window=item)
             if test_model == 0:
                 model = 'hawkes_rnn_autoencoder_true'
                 new_graph = tf.Graph()
@@ -430,9 +524,78 @@ def main():
                 model = 'vanilla_rnn_autoencoder_false'
                 with new_graph.as_default():
                     vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
+            elif test_model == 4:
+                new_graph = tf.Graph()
+                model = 'concat_hawkes_rnn_autoencoder_true'
+                with new_graph.as_default():
+                    vanilla_rnn_test(config, cell_type=cell_type, autoencoder=15, model=model)
             else:
                 raise ValueError('invalid test model')
 
 
+def hyperparameter_search():
+    # 以随机搜索方式，用fuse hawkes rnn在3次入院长度，一年心功能2期这个任务让运行多次
+    # 进行超参数搜索
+    batch_size_list = [64, 128, 256, 512]
+    num_hidden_list = [16, 32, 64, 128]
+    autoencoder_list = [16, 32, 64, 128]
+
+    time_window_list = ['一年']
+    for cell_type in ['gru']:
+        for item in time_window_list:
+            for i in range(50):
+                max_sequence_length = 3
+                batch_size = batch_size_list[random.randint(0, 3)]
+                learning_rate = 10**(random.uniform(-4, -1))
+                num_hidden = num_hidden_list[random.randint(0, 3)]
+                autoencoder = autoencoder_list[random.randint(0, 3)]
+                keep_rate_hidden = random.uniform(0.8, 1)
+                keep_rate_input = random.uniform(0.8, 1)
+                dae_weight = 10**(random.uniform(-1, 0))
+
+                config = set_hyperparameter(full_event_test=False, time_window=item, batch_size=batch_size,
+                                            max_sequence_length=max_sequence_length, learning_rate=learning_rate,
+                                            num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                            keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
+                model = 'hyperparameter_search_hawkes_rnn_autoencoder_true'
+                new_graph = tf.Graph()
+                with new_graph.as_default():
+                    hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+
+
+def cell_search():
+    # 以随机搜索方式，用fuse hawkes rnn在3次入院长度，一年心功能2期这个任务让运行10次
+    # 每次进行超参数设计后都让LSTM和GRU各跑一次，综合比较，选择模型
+    batch_size_list = [64, 128, 256, 512]
+    num_hidden_list = [16, 32, 64, 128]
+    autoencoder_list = [16, 32, 64, 128]
+
+    time_window_list = ['三月', '一年']
+    for item in time_window_list:
+        for i in range(10):
+            max_sequence_length = 3
+            batch_size = batch_size_list[random.randint(0, 3)]
+            learning_rate = 10**(random.uniform(-4, -1))
+            num_hidden = num_hidden_list[random.randint(0, 3)]
+            autoencoder = autoencoder_list[random.randint(0, 3)]
+            keep_rate_hidden = random.uniform(0.8, 1)
+            keep_rate_input = random.uniform(0.8, 1)
+            dae_weight = 10**(random.uniform(-1, 0))
+
+            config = set_hyperparameter(full_event_test=False, time_window=item, batch_size=batch_size,
+                                        max_sequence_length=max_sequence_length, learning_rate=learning_rate,
+                                        num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                        keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
+            model = 'cell_search'
+            new_graph = tf.Graph()
+            with new_graph.as_default():
+                hawkes_rnn_test(config, cell_type='lstm', autoencoder=autoencoder, model=model)
+            new_graph = tf.Graph()
+            with new_graph.as_default():
+                hawkes_rnn_test(config, cell_type='gru', autoencoder=autoencoder, model=model)
+
+
 if __name__ == '__main__':
-    main()
+    # cell_search()
+    hyperparameter_search()
+    # performance_test()
