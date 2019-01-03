@@ -104,10 +104,6 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
       ValueError: If inputs is None or an empty list.
     """
 
-    # Python 动态类型特性：无法像静态类型语言一样在编译期完成类型检查，需要在运行阶段检查输入参数是否合法
-    with tf.name_scope('cell_check'):
-        rnn_cell_impl.assert_like_rnncell("cell", cell)
-
     with vs.variable_scope(scope or "hawkes_rnn") as varscope:
         # Create a new scope in which the caching device is either
         # determined by the parent scope, or is set to place the cached
@@ -415,14 +411,15 @@ def unit_test():
     test_cell_type = 1
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
-                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                         name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
             hawkes_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
                              phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden, weight_initializer=initializer_o, bias_initializer=initializer_z,
-                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
+                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator, name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
             hawkes_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
@@ -430,7 +427,8 @@ def unit_test():
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
-                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                          name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
             hawkes_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,

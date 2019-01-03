@@ -134,9 +134,9 @@ def main(data_length):
     则，取病人的前n-3次入院数据作为feature，剩余部分补零。第n-3次入院对应的label为标签
     :return:
     """
-    feature_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
-    label_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_标签.csv')
-    save_root = os.path.abspath('..\\..\\resource\\rnn_data\\')
+    feature_path = os.path.abspath('../../resource/预处理后的长期纵向数据_特征.csv')
+    label_path = os.path.abspath('../../resource/preprocessed_label.csv')
+    save_root = os.path.abspath('../../resource/rnn_data/')
 
     for j in range(10):
         fold_list = six_fold_generate(feature_path, label_path, data_length)
@@ -178,4 +178,6 @@ def main(data_length):
 
 
 if __name__ == '__main__':
-    main(6)
+    for i in range(3, 10):
+        main(i)
+

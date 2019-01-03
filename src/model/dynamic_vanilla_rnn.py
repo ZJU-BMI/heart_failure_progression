@@ -84,9 +84,6 @@ def _vanilla_dynamic_rnn(cell, inputs, sequence_length, initial_state, parallel_
       ValueError: If inputs is None or an empty list.
     """
 
-    # Python 动态类型特性：无法像静态类型语言一样在编译期完成类型检查，需要在运行阶段检查输入参数是否合法
-    rnn_cell_impl.assert_like_rnncell("cell", cell)
-
     with vs.variable_scope(scope or "rnn") as varscope:
         # Create a new scope in which the caching device is either
         # determined by the parent scope, or is set to place the cached
@@ -270,6 +267,8 @@ def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_
             # input_x 用于计算重构原始向量时产生的误差
             processed_input, autoencoder_weight = autoencoder.denoising_autoencoder(
                 phase_indicator, context_placeholder, keep_rate_input, embedded_size, autoencoder_initializer)
+            if embedded_size < 0:
+                processed_input = tf.concat([processed_input, event_placeholder], axis=2)
 
         with tf.name_scope('vanilla_rnn'):
             output_final, final_state = _vanilla_dynamic_rnn(cell, processed_input, sequence_length, initial_state)

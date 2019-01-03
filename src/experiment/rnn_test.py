@@ -260,6 +260,9 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
                     best_result['f1'] = f1
                     best_result['prediction_label'] = test_label_prediction
 
+                if validate_label.sum() < 0.5 or test_prediction.sum() < 0.5 or train_label.sum() < 0.5:
+                    break
+
     return best_result
 
 
@@ -337,7 +340,7 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
     max_iter = experiment_config['max_iter']
     validate_step_interval = experiment_config['validate_step_interval']
 
-    save_folder = os.path.abspath('..\\..\\resource\\prediction_result\\{}'.format(model_name))
+    save_folder = os.path.abspath('../../resource/prediction_result/{}'.format(model_name))
 
     # 五折交叉验证，跑十次
     for task in event_list:
@@ -383,9 +386,11 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     current_time = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    # 存储性能
+    max_sequence_length = experiment_config['max_sequence_length']
 
     # 存储预测与标签
-    save_path = os.path.join(save_folder, 'prediction_label_{}_{}.csv'.format(task_name, current_time))
+    save_path = os.path.join(save_folder, 'length_{}_prediction_label_{}_{}.csv'.format(max_sequence_length, task_name, current_time))
     data_to_write = [['label', 'prediction']]
     for key in experiment_config:
         data_to_write.append([key, experiment_config[key]])
@@ -396,8 +401,7 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
     with open(save_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(data_to_write)
 
-    # 存储性能
-    save_path = os.path.join(save_folder, 'result_{}_{}.csv'.format(task_name, current_time))
+    save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length, task_name, current_time))
     data_to_write = []
     for key in experiment_config:
         data_to_write.append([key, experiment_config[key]])
@@ -425,11 +429,11 @@ def set_hyperparameter(time_window, full_event_test=False, max_sequence_length=1
     """
     :return:
     """
-    data_folder = os.path.abspath('..\\..\\resource\\rnn_data')
-    mutual_intensity_path = os.path.abspath('..\\..\\resource\\hawkes_result\\mutual.npy')
-    base_intensity_path = os.path.abspath('..\\..\\resource\\hawkes_result\\base.npy')
-    model_save_path = os.path.abspath('..\\..\\resource\\model_cache')
-    model_graph_save_path = os.path.abspath('..\\..\\resource\\model_diagram')
+    data_folder = os.path.abspath('../../resource/rnn_data')
+    mutual_intensity_path = os.path.abspath('../../resource/hawkes_result/mutual.npy')
+    base_intensity_path = os.path.abspath('../../resource/hawkes_result/base.npy')
+    model_save_path = os.path.abspath('../../resource/model_cache')
+    model_graph_save_path = os.path.abspath('../../resource/model_diagram')
 
     max_iter = 10000
     validate_step_interval = 20
@@ -481,24 +485,36 @@ def set_hyperparameter(time_window, full_event_test=False, max_sequence_length=1
     return experiment_configure
 
 
-def performance_test():
-    batch_size_list = [64, 128, 256, 512]
-    num_hidden_list = [16, 32, 64, 128]
-    autoencoder_list = [16, 32, 64, 128]
-    max_sequence_length = 3
-    batch_size = batch_size_list[random.randint(0, 3)]
-    learning_rate = 10 ** (random.uniform(-5, -2))
-    num_hidden = num_hidden_list[random.randint(0, 3)]
-    autoencoder = autoencoder_list[random.randint(0, 3)]
-    keep_rate_hidden = random.uniform(0.8, 1)
-    keep_rate_input = random.uniform(0.8, 1)
-    dae_weight = 10 ** (random.uniform(-1, 0))
+def length_test(test_model):
+    for i in range(3, 10):
+        performance_test(data_length=i, test_model=test_model, full_event_test=True)
 
-    time_window_list = ['一年']
-    test_model = 0
+
+def performance_test(data_length, test_model, full_event_test):
+    time_window_list = ['一年', '三月']
     for cell_type in ['gru']:
         for item in time_window_list:
-            config = set_hyperparameter(full_event_test=True, time_window=item, batch_size=batch_size,
+            if item == '一年':
+                max_sequence_length = data_length
+                batch_size = 512
+                learning_rate = 0.001
+                num_hidden = 64
+                autoencoder = 16
+                keep_rate_hidden = 1
+                keep_rate_input = 0.8
+                dae_weight = 0.15
+            elif item == '三月':
+                max_sequence_length = data_length
+                batch_size = 128
+                learning_rate = 0.008
+                num_hidden = 64
+                autoencoder = 32
+                keep_rate_hidden = 1
+                keep_rate_input = 0.8
+                dae_weight = 0.15
+            else:
+                raise ValueError('')
+            config = set_hyperparameter(full_event_test=full_event_test, time_window=item, batch_size=batch_size,
                                         max_sequence_length=max_sequence_length, learning_rate=learning_rate,
                                         num_hidden=num_hidden, keep_rate_input=keep_rate_input,
                                         keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
@@ -508,27 +524,32 @@ def performance_test():
                 model = 'hawkes_rnn_autoencoder_true'
                 new_graph = tf.Graph()
                 with new_graph.as_default():
-                    hawkes_rnn_test(config, cell_type=cell_type, autoencoder=15, model=model)
+                    with tf.device('/device:GPU:0'):
+                        hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
             elif test_model == 1:
                 new_graph = tf.Graph()
                 model = 'hawkes_rnn_autoencoder_false'
                 with new_graph.as_default():
-                    hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
+                    with tf.device('/device:GPU:0'):
+                        hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
             elif test_model == 2:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_true'
                 with new_graph.as_default():
-                    vanilla_rnn_test(config, cell_type=cell_type, autoencoder=15, model=model)
+                    with tf.device('/device:GPU:0'):
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
             elif test_model == 3:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_false'
                 with new_graph.as_default():
-                    vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
+                    with tf.device('/device:GPU:0'):
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
             elif test_model == 4:
                 new_graph = tf.Graph()
                 model = 'concat_hawkes_rnn_autoencoder_true'
                 with new_graph.as_default():
-                    vanilla_rnn_test(config, cell_type=cell_type, autoencoder=15, model=model)
+                    with tf.device('/device:GPU:0'):
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
             else:
                 raise ValueError('invalid test model')
 
@@ -540,11 +561,11 @@ def hyperparameter_search():
     num_hidden_list = [16, 32, 64, 128]
     autoencoder_list = [16, 32, 64, 128]
 
-    time_window_list = ['一年']
+    time_window_list = ['一年', '三月']
     for cell_type in ['gru']:
         for item in time_window_list:
-            for i in range(50):
-                max_sequence_length = 3
+            for i in range(100):
+                max_sequence_length = 10
                 batch_size = batch_size_list[random.randint(0, 3)]
                 learning_rate = 10**(random.uniform(-4, -1))
                 num_hidden = num_hidden_list[random.randint(0, 3)]
@@ -597,5 +618,6 @@ def cell_search():
 
 if __name__ == '__main__':
     # cell_search()
-    hyperparameter_search()
-    # performance_test()
+    # hyperparameter_search()
+    # performance_test(data_length=10, test_model=0, full_event_test=False)
+    length_test(test_model=0)
