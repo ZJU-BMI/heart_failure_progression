@@ -274,6 +274,9 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
                 if validate_label.sum() < 0.5 or test_prediction.sum() < 0.5 or train_label.sum() < 0.5:
                     break
 
+                if validate_label.sum() < 0.5 or test_prediction.sum() < 0.5 or train_label.sum() < 0.5:
+                    break
+
     return best_result
 
 
@@ -351,7 +354,11 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
     max_iter = experiment_config['max_iter']
     validate_step_interval = experiment_config['validate_step_interval']
 
+<<<<<<< HEAD
     metric_folder = os.path.join(experiment_config['prediction_result_folder'], model_name)
+=======
+    save_folder = os.path.abspath('../../resource/prediction_result/{}'.format(model_name))
+>>>>>>> origin/master
 
     # 五折交叉验证，跑十次
     best_auc = dict()
@@ -421,8 +428,12 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
     max_sequence_length = experiment_config['max_sequence_length']
 
     # 存储预测与标签
+<<<<<<< HEAD
     save_path = os.path.join(save_folder, 'length_{}_prediction_label_{}_{}.csv'.format(max_sequence_length, task_name,
                                                                                         current_time))
+=======
+    save_path = os.path.join(save_folder, 'length_{}_prediction_label_{}_{}.csv'.format(max_sequence_length, task_name, current_time))
+>>>>>>> origin/master
     data_to_write = [['label', 'prediction']]
     for key in experiment_config:
         data_to_write.append([key, experiment_config[key]])
@@ -433,6 +444,7 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
     with open(save_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(data_to_write)
 
+<<<<<<< HEAD
     # 存储最后一个hidden state
     if save_last_state:
         for j in last_hidden_state_dict:
@@ -448,6 +460,9 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
     # 存储综合性能
     save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length, task_name,
                                                                               current_time))
+=======
+    save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length, task_name, current_time))
+>>>>>>> origin/master
     data_to_write = []
     for key in experiment_config:
         data_to_write.append([key, experiment_config[key]])
@@ -481,8 +496,11 @@ def set_hyperparameter(time_window, max_sequence_length=10, batch_size=256, dae_
     base_intensity_path = os.path.abspath('../../resource/hawkes_result/base.npy')
     model_save_path = os.path.abspath('../../resource/model_cache')
     model_graph_save_path = os.path.abspath('../../resource/model_diagram')
+<<<<<<< HEAD
     prediction_metric_folder = os.path.abspath('../../resource/prediction_metric/')
     prediction_result_folder = os.path.abspath('../../resource/prediction_result/')
+=======
+>>>>>>> origin/master
 
     max_iter = 10000
     validate_step_interval = 20
@@ -535,12 +553,21 @@ def set_hyperparameter(time_window, max_sequence_length=10, batch_size=256, dae_
     return experiment_configure
 
 
+<<<<<<< HEAD
 def length_test(test_model, event_list):
     for i in range(9, 2, -1):
         performance_test(data_length=i, test_model=test_model, event_list=event_list, save_last_hidden_state=False)
 
 
 def performance_test(data_length, test_model, save_last_hidden_state, event_list=None):
+=======
+def length_test(test_model):
+    for i in range(3, 10):
+        performance_test(data_length=i, test_model=test_model, full_event_test=True)
+
+
+def performance_test(data_length, test_model, full_event_test):
+>>>>>>> origin/master
     time_window_list = ['一年', '三月']
     for cell_type in ['gru']:
         for item in time_window_list:
@@ -564,7 +591,11 @@ def performance_test(data_length, test_model, save_last_hidden_state, event_list
                 dae_weight = 0.15
             else:
                 raise ValueError('')
+<<<<<<< HEAD
             config = set_hyperparameter(time_window=item, batch_size=batch_size, event_list=event_list,
+=======
+            config = set_hyperparameter(full_event_test=full_event_test, time_window=item, batch_size=batch_size,
+>>>>>>> origin/master
                                         max_sequence_length=max_sequence_length, learning_rate=learning_rate,
                                         num_hidden=num_hidden, keep_rate_input=keep_rate_input,
                                         keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
@@ -575,40 +606,61 @@ def performance_test(data_length, test_model, save_last_hidden_state, event_list
                 new_graph = tf.Graph()
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
+<<<<<<< HEAD
                         hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
                                         save_last_hidden_state=save_last_hidden_state)
+=======
+                        hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+>>>>>>> origin/master
             elif test_model == 1:
                 new_graph = tf.Graph()
                 model = 'hawkes_rnn_autoencoder_false'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
+<<<<<<< HEAD
                         hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model,
                                         save_last_hidden_state=save_last_hidden_state)
+=======
+                        hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
+>>>>>>> origin/master
             elif test_model == 2:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_true'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
+<<<<<<< HEAD
                         vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
                                          save_last_hidden_state=save_last_hidden_state)
+=======
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+>>>>>>> origin/master
             elif test_model == 3:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_false'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
+<<<<<<< HEAD
                         vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model,
                                          save_last_hidden_state=save_last_hidden_state)
+=======
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
+>>>>>>> origin/master
             elif test_model == 4:
                 new_graph = tf.Graph()
                 model = 'concat_hawkes_rnn_autoencoder_true'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
+<<<<<<< HEAD
                         concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
                                                save_last_hidden_state=save_last_hidden_state)
+=======
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+>>>>>>> origin/master
             else:
                 raise ValueError('invalid test model')
 
 
+<<<<<<< HEAD
 def hyperparameter_search(event_list, time_window):
     # 定义max sequence length为10为，3月心功能2级和1年心功能2级作为不同时间窗口的代表性事件，以Hawkes RNN Fuse为样本
     # 以贝叶斯优化的方式，0进行超参数搜索
@@ -646,6 +698,36 @@ def hyperparameter_search(event_list, time_window):
 
     opt_object.run_optimization()
     print('iter {}, optimum fx: {}, optimum x: {}'.format(0, opt_object.fx_opt, opt_object.x_opt))
+=======
+def hyperparameter_search():
+    # 以随机搜索方式，用fuse hawkes rnn在3次入院长度，一年心功能2期这个任务让运行多次
+    # 进行超参数搜索
+    batch_size_list = [64, 128, 256, 512]
+    num_hidden_list = [16, 32, 64, 128]
+    autoencoder_list = [16, 32, 64, 128]
+
+    time_window_list = ['一年', '三月']
+    for cell_type in ['gru']:
+        for item in time_window_list:
+            for i in range(100):
+                max_sequence_length = 10
+                batch_size = batch_size_list[random.randint(0, 3)]
+                learning_rate = 10**(random.uniform(-4, -1))
+                num_hidden = num_hidden_list[random.randint(0, 3)]
+                autoencoder = autoencoder_list[random.randint(0, 3)]
+                keep_rate_hidden = random.uniform(0.8, 1)
+                keep_rate_input = random.uniform(0.8, 1)
+                dae_weight = 10**(random.uniform(-1, 0))
+
+                config = set_hyperparameter(full_event_test=False, time_window=item, batch_size=batch_size,
+                                            max_sequence_length=max_sequence_length, learning_rate=learning_rate,
+                                            num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                            keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
+                model = 'hyperparameter_search_hawkes_rnn_autoencoder_true'
+                new_graph = tf.Graph()
+                with new_graph.as_default():
+                    hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+>>>>>>> origin/master
 
 
 def cell_search():
@@ -684,6 +766,12 @@ def cell_search():
 
 if __name__ == '__main__':
     # cell_search()
+<<<<<<< HEAD
     # hyperparameter_search(event_list=['心功能2级'], time_window='三月')
     performance_test(data_length=10, test_model=4, event_list=['其它'], save_last_hidden_state=True)
     # length_test(test_model=0, event_list=['其它'])
+=======
+    # hyperparameter_search()
+    # performance_test(data_length=10, test_model=0, full_event_test=False)
+    length_test(test_model=0)
+>>>>>>> origin/master
