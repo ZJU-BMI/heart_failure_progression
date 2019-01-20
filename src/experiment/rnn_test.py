@@ -269,7 +269,7 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
                     best_result['recall'] = recall
                     best_result['f1'] = f1
                     best_result['prediction_label'] = test_label_prediction
-                    best_result['last_hidden_state'] = test_hidden_state
+                    best_result['last_hidden_state'] = {'label': test_label, 'hidden_state': test_hidden_state}
 
                 if validate_label.sum() < 0.5 or test_prediction.sum() < 0.5 or train_label.sum() < 0.5:
                     break
@@ -331,7 +331,7 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, mo
                      sequence_length: input_sequence_length}
         return feed_dict, input_y
     elif model == 'hawkes_rnn':
-        _, _, event_placeholder, context_placeholder, y_placeholder, batch_size,phase_indicator, base_intensity, \
+        _, _, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, base_intensity, \
             mutual_intensity, time_list, task_index_, sequence_length, _, _ = node_list
         feed_dict = {event_placeholder: input_event, y_placeholder: input_y, batch_size: batch_size_value,
                      time_list: time_interval_value, phase_indicator: phase_value,
@@ -359,12 +359,12 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
         result_record = dict()
         prediction_label_dict = dict()
         last_hidden_state_dict = dict()
-        for j in range(5):
+        for j in range(2):
             if not result_record.__contains__(j):
                 result_record[j] = dict()
                 prediction_label_dict[j] = dict()
                 last_hidden_state_dict[j] = dict()
-            for i in range(10):
+            for i in range(2):
                 # 输出当前实验设置
                 print('{}_repeat_{}_fold_{}_task_{}_log'.format(model_name, i, j, task))
                 for key in experiment_config:
@@ -437,13 +437,17 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
     if save_last_state:
         for j in last_hidden_state_dict:
             for i in last_hidden_state_dict[j]:
-                last_hidden_state = last_hidden_state_dict[j][i]
+                last_hidden_state = last_hidden_state_dict[j][i]['hidden_state']
+                hidden_state_label = last_hidden_state_dict[j][i]['label']
                 save_path = os.path.join(save_folder, 'last_hidden_state')
                 if not os.path.exists(save_path):
                     os.makedirs(save_path)
-                save_path = os.path.join(save_path, 'last_hidden_length_{}_{}_fold_{}_repeat_{}.npy'.format(
+                hidden_state_save_path = os.path.join(save_path, 'last_hidden_state_{}_{}_fold_{}_repeat_{}.npy'.format(
                     max_sequence_length, task_name, j, i, current_time))
-                np.save(save_path, last_hidden_state)
+                label_save_path = os.path.join(save_path, 'label_{}_{}_fold_{}_repeat_{}.npy'.format(
+                    max_sequence_length, task_name, j, i, current_time))
+                np.save(hidden_state_save_path, last_hidden_state)
+                np.save(label_save_path, hidden_state_label)
 
     # 存储综合性能
     save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length, task_name,
@@ -514,7 +518,7 @@ def set_hyperparameter(time_window, max_sequence_length=10, batch_size=256, dae_
 
     if event_list is None:
         label_candidate = ['心功能2级', '心功能3级', '心功能1级', '心功能4级', '再血管化手术', '死亡', '癌症',
-                           '糖尿病入院', '肺病', '肾病入院']
+                           '其它', '肺病', '肾病入院']
     else:
         label_candidate = event_list
 
@@ -685,5 +689,6 @@ def cell_search():
 if __name__ == '__main__':
     # cell_search()
     # hyperparameter_search(event_list=['心功能2级'], time_window='三月')
-    performance_test(data_length=10, test_model=4, event_list=['其它'], save_last_hidden_state=True)
+    performance_test(data_length=10, test_model=4, event_list=None, save_last_hidden_state=True)
     # length_test(test_model=0, event_list=['其它'])
+    print('complete')
