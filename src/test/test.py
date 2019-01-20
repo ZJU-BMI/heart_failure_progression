@@ -1,17 +1,15 @@
+# encoding=utf-8-sig
 import tensorflow as tf
+import numpy as np
 
+x = tf.placeholder(tf.float32, [None, 10, 20])
+lstm = tf.nn.rnn_cell.LSTMCell(5)
+rnn = tf.keras.layers.RNN(lstm)
+output_list = rnn(x)
 
-def main():
-    batch_size = tf.placeholder(tf.int32, [], 'batch_size')
-    x_placeholder = tf.placeholder(tf.float32, [10, None, 20], 'x')
-    sequence_length = tf.placeholder(tf.float32, [None], 'sequence_length')
-    lstm_cell = tf.nn.rnn_cell.LSTMCell(num_units=15)
-    initial_state = lstm_cell.zero_state(batch_size, dtype=tf.float32)
-    outputs, state = tf.nn.dynamic_rnn(lstm_cell, x_placeholder,
-                                       sequence_length=sequence_length,
-                                       initial_state=initial_state,
-                                       dtype=tf.float32)
+init = tf.global_variables_initializer()
+print('finish')
 
-
-if __name__ == '__main__':
-    main()
+with tf.Session() as sess:
+    sess.run(init)
+    output_list = sess.run(output_list, feed_dict={x: np.random.normal(0, 1, [2, 10, 20])})

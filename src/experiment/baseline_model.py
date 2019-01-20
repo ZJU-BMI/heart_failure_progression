@@ -209,9 +209,9 @@ def main():
     label_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_标签.csv')
     feature_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
     output_dict = read_data(feature_path, label_path)
-    time_window = ['一年', '半年', '三月', '两年']
-    event_order = ['心功能2级', '心功能1级', '心功能3级', '心功能4级', '再血管化手术',
-                   '死亡', '肺病', '肾病入院', '癌症', '糖尿病']
+    time_window = ['一年', '三月',]
+    event_order = ['其它', '心功能2级', '心功能1级', '心功能3级', '心功能4级', '再血管化手术',
+                   '死亡', '肺病', '肾病入院', '癌症', '糖尿病', ]
     valid_event_set = set()
     for item_1 in time_window:
         for item_2 in event_order:

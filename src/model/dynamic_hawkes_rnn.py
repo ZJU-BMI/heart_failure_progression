@@ -70,7 +70,7 @@ def _should_cache():
 
 
 def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list, time_list, mutual_intensity,
-                        base_intensity, task_index, parallel_iterations=32, swap_memory=False, scope=None):
+                        base_intensity, task_index, parallel_iterations=32, swap_memory=False, scope='hawkes_rnn'):
     """Creates a recurrent neural network specified by RNNCell `cell`.
 
     Args:
@@ -104,10 +104,6 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
       ValueError: If inputs is None or an empty list.
     """
 
-    # Python 动态类型特性：无法像静态类型语言一样在编译期完成类型检查，需要在运行阶段检查输入参数是否合法
-    with tf.name_scope('cell_check'):
-        rnn_cell_impl.assert_like_rnncell("cell", cell)
-
     with vs.variable_scope(scope or "hawkes_rnn") as varscope:
         # Create a new scope in which the caching device is either
         # determined by the parent scope, or is set to place the cached
@@ -124,7 +120,7 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
     state = initial_state
 
     # Construct an initial output
-    with tf.name_scope('input_shape'):
+    with tf.name_scope('input_shape_'+scope):
         input_shape = array_ops.shape(inputs)
         time_steps, batch_size = input_shape[0], input_shape[1]
         const_time_step, const_batch_size = inputs.get_shape().as_list()[:2]
@@ -134,11 +130,11 @@ def _hawkes_dynamic_rnn(cell, inputs, sequence_length, initial_state, event_list
         size = _concat(batch_size, size)
         return array_ops.zeros(array_ops.stack(size), _infer_state_dtype(state))
 
-    with tf.name_scope('prepare_ops'):
+    with tf.name_scope('prepare_ops_'+scope):
         zero_output = _create_zero_arrays(cell.output_size)
         time = array_ops.constant(0, dtype=dtypes.int32, name="time")
 
-    with ops.name_scope("hawkes_rnn") as scope:
+    with ops.name_scope(scope) as scope:
         base_name = scope
 
         # TensorArray，为了while_loop所准备的特定数据结构
@@ -315,14 +311,14 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
             autoencoder_initializer)
 
     with tf.name_scope('hawkes_rnn'):
-        output_final, final_state = _hawkes_dynamic_rnn(cell, processed_input, sequence_length, initial_state,
-                                                        base_intensity=base_intensity, task_index=task_index,
-                                                        mutual_intensity=mutual_intensity, time_list=time_list,
-                                                        event_list=event_placeholder)
+        outputs, final_state = _hawkes_dynamic_rnn(cell, processed_input, sequence_length, initial_state,
+                                                   base_intensity=base_intensity, task_index=task_index,
+                                                   mutual_intensity=mutual_intensity, time_list=time_list,
+                                                   event_list=event_placeholder)
         # 在使用时LSTM时比较麻烦，因为state里同时包含了hidden state和cell state，只有后者是需要输出的
         # 因此需要额外需要做一个split。这种写法非常不优雅，但是我想了一想，也没什么更好的办法
         # 做split时，需要特别注意一下state里到底谁前谁后
-        output_length = output_final.shape[2].value
+        output_length = outputs.shape[2].value
         state_length = final_state.shape[1].value
         if output_length == state_length:
             # 不需要做任何事情
@@ -355,7 +351,7 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
             loss = loss_pred + loss_dae * dae_weight
 
     return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-        base_intensity, mutual_intensity, time_list, task_index, sequence_length
+        base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state
 
 
 def calculate_intensity_full(time_interval_list, event_list, base_intensity_vector, mutual_intensity_matrix, index,
@@ -415,14 +411,15 @@ def unit_test():
     test_cell_type = 1
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
-                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                         name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
             hawkes_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
                              phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden, weight_initializer=initializer_o, bias_initializer=initializer_z,
-                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
+                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator, name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
             hawkes_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
@@ -430,7 +427,8 @@ def unit_test():
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
-                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                          name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
             hawkes_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,

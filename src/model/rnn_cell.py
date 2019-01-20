@@ -121,7 +121,7 @@ class GRUCell(object):
         bias_r = variable_dict['bias_r']
         bias_g = variable_dict['bias_g']
 
-        with tf.name_scope('CGRU_Internal'):
+        with tf.name_scope('GRU_Internal'):
             concat_1 = tf.transpose(tf.concat([input_x, recurrent_state], axis=1))
             z_t = tf.transpose(tf.sigmoid(tf.matmul(weight_z, concat_1) + bias_z))
             r_t = tf.transpose(tf.sigmoid(tf.matmul(weight_r, concat_1) + bias_r))

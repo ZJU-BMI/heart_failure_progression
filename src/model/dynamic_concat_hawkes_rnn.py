@@ -33,12 +33,12 @@ def concat_hawkes_model(cell_context, cell_event, num_steps, num_hidden, num_con
             phase_indicator, context_placeholder, keep_rate_input, autoencoder_length, autoencoder_initializer)
 
     with tf.name_scope('context_hawkes_rnn'):
-        output_final, final_state = _hawkes_dynamic_rnn(cell_context, processed_input, sequence_length,
-                                                        context_initial_state, base_intensity=base_intensity,
-                                                        task_index=task_index, mutual_intensity=mutual_intensity,
-                                                        time_list=time_list, event_list=event_placeholder,
-                                                        scope='context_hawkes')
-        output_length = output_final.shape[2].value
+        outputs, final_state = _hawkes_dynamic_rnn(cell_context, processed_input, sequence_length,
+                                                   context_initial_state, base_intensity=base_intensity,
+                                                   task_index=task_index, mutual_intensity=mutual_intensity,
+                                                   time_list=time_list, event_list=event_placeholder,
+                                                   scope='context_hawkes')
+        output_length = outputs.shape[2].value
         state_length = final_state.shape[1].value
         if output_length == state_length:
             # 不需要做任何事情
@@ -49,12 +49,12 @@ def concat_hawkes_model(cell_context, cell_event, num_steps, num_hidden, num_con
             raise ValueError('Invalid Size')
 
     with tf.name_scope('event_hawkes_rnn'):
-        output_final, final_state = _hawkes_dynamic_rnn(cell_event, event_placeholder, sequence_length,
-                                                        event_initial_state, base_intensity=base_intensity,
-                                                        task_index=task_index, mutual_intensity=mutual_intensity,
-                                                        time_list=time_list, event_list=event_placeholder,
-                                                        scope='event_hawkes')
-        output_length = output_final.shape[2].value
+        outputs, final_state = _hawkes_dynamic_rnn(cell_event, event_placeholder, sequence_length,
+                                                   event_initial_state, base_intensity=base_intensity,
+                                                   task_index=task_index, mutual_intensity=mutual_intensity,
+                                                   time_list=time_list, event_list=event_placeholder,
+                                                   scope='event_hawkes')
+        output_length = outputs.shape[2].value
         state_length = final_state.shape[1].value
         if output_length == state_length:
             # 不需要做任何事情
@@ -90,7 +90,7 @@ def concat_hawkes_model(cell_context, cell_event, num_steps, num_hidden, num_con
             loss = loss_pred + loss_dae * dae_weight
 
     return loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-        base_intensity, mutual_intensity, time_list, task_index, sequence_length
+        base_intensity, mutual_intensity, time_list, task_index, sequence_length, concat_final_state
 
 
 def unit_test():
@@ -122,7 +122,7 @@ def unit_test():
                                  bias_initializer=initializer_z,  phase_indicator=phase_indicator, name='context_gru',
                                  weight_initializer=initializer_o)
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length, concat_final_state = \
             concat_hawkes_model(a_cell_context, a_cell_event, num_steps, num_hidden, num_context, num_event,
                                 keep_rate_input, dae_weight, phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
@@ -133,7 +133,7 @@ def unit_test():
                                  bias_initializer=initializer_z,  input_length=context_input_length,
                                  phase_indicator=phase_indicator, name='context_raw')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length, concat_final_state = \
             concat_hawkes_model(b_cell_context, b_cell_event, num_steps, num_hidden, num_context, num_event,
                                 keep_rate_input, dae_weight, phase_indicator, autoencoder_length)
 
@@ -145,7 +145,7 @@ def unit_test():
                                   bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
                                   weight_initializer=initializer_o)
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length, concat_final_state = \
             concat_hawkes_model(c_cell_context, c_cell_event, num_steps, num_hidden, num_context, num_event,
                                 keep_rate_input, dae_weight, phase_indicator, autoencoder_length)
     else:
