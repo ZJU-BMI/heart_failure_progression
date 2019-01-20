@@ -145,11 +145,7 @@ class DataSource(object):
 
         # 构建event列表
         label_candidate = ['其它', '再血管化手术', '心功能1级', '心功能2级', '心功能3级', '心功能4级', '死亡', '癌症',
-<<<<<<< HEAD
                            '糖尿病入院', '肺病', '肾病入院']
-=======
-                           '糖尿病入院', '肺病', '肾病入院', '全因']
->>>>>>> origin/master
         time_candidate = ['三月', '一年']
         event_list = list()
         for item_1 in label_candidate:
@@ -192,11 +188,7 @@ class DataSource(object):
 
 def unit_test():
     data_folder = os.path.abspath('../../resource/rnn_data')
-<<<<<<< HEAD
     data_length = 10
-=======
-    data_length = 20
->>>>>>> origin/master
     test_fold_num = 0
     batch_size = 128
     data_source = DataSource(data_folder, data_length, 8, test_fold_num, batch_size)
