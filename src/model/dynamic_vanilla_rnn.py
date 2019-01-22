@@ -267,11 +267,10 @@ def vanilla_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_
             # input_x 用于计算重构原始向量时产生的误差
             processed_input, autoencoder_weight = autoencoder.denoising_autoencoder(
                 phase_indicator, context_placeholder, keep_rate_input, embedded_size, autoencoder_initializer)
-            if embedded_size < 0:
-                processed_input = tf.concat([processed_input, event_placeholder], axis=2)
 
         with tf.name_scope('vanilla_rnn'):
-            outputs, final_state = _vanilla_dynamic_rnn(cell, processed_input, sequence_length, initial_state)
+            input_ = tf.concat([processed_input, event_placeholder], axis=2)
+            outputs, final_state = _vanilla_dynamic_rnn(cell, input_, sequence_length, initial_state)
 
             # 在使用时LSTM时比较麻烦，因为state里同时包含了hidden state和cell state，只有后者是需要输出的
             # 因此需要额外需要做一个split。这种写法非常不优雅，但是我想了一想，也没什么更好的办法
@@ -332,23 +331,29 @@ def unit_test():
     test_cell_type = 2
     if test_cell_type == 0:
         a_cell = GRUCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
-                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                         bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                         name='gru')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            sequence_length = vanilla_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
-                                                dae_weight, phase_indicator, embedded_size)
+            sequence_length, final_state = vanilla_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event,
+                                                             keep_rate_input, dae_weight, phase_indicator,
+                                                             embedded_size)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden,  weight_initializer=initializer_o, bias_initializer=initializer_z,
-                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator)
+                         keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator,
+                         name='raw')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            sequence_length = vanilla_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
-                                                dae_weight, phase_indicator, embedded_size)
+            sequence_length, final_state = vanilla_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event,
+                                                             keep_rate_input, dae_weight, phase_indicator,
+                                                             embedded_size)
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
-                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator)
+                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
+                          name='lstm')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            sequence_length = vanilla_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input,
-                                                dae_weight, phase_indicator, embedded_size)
+            sequence_length, final_state = vanilla_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event,
+                                                             keep_rate_input, dae_weight, phase_indicator,
+                                                             embedded_size)
     else:
         raise ValueError('')
     print('finish')

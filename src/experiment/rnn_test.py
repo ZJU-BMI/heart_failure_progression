@@ -10,7 +10,6 @@ import os
 import csv
 import GPyOpt
 import datetime
-import random
 
 
 def get_metrics(prediction, label, threshold=0.2):
@@ -45,7 +44,7 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, save_
     shared_hyperparameter['cell_type'] = cell_type
 
     if autoencoder > 0:
-        input_length = autoencoder
+        input_length = autoencoder + event_num
     else:
         input_length = event_num + context_num
 
@@ -97,7 +96,7 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, save_l
     g = tf.Graph()
     model = model+'_'+cell_type
     if autoencoder > 0:
-        input_length = autoencoder
+        input_length = autoencoder + event_num
     else:
         input_length = event_num + context_num
 
@@ -359,12 +358,12 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
         result_record = dict()
         prediction_label_dict = dict()
         last_hidden_state_dict = dict()
-        for j in range(2):
+        for j in range(5):
             if not result_record.__contains__(j):
                 result_record[j] = dict()
                 prediction_label_dict[j] = dict()
                 last_hidden_state_dict[j] = dict()
-            for i in range(2):
+            for i in range(10):
                 # 输出当前实验设置
                 print('{}_repeat_{}_fold_{}_task_{}_log'.format(model_name, i, j, task))
                 for key in experiment_config:
@@ -609,6 +608,13 @@ def performance_test(data_length, test_model, save_last_hidden_state, event_list
                     with tf.device('/device:GPU:0'):
                         concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
                                                save_last_hidden_state=save_last_hidden_state)
+            elif test_model == 5:
+                new_graph = tf.Graph()
+                model = 'concat_hawkes_rnn_autoencoder_false'
+                with new_graph.as_default():
+                    with  tf.device('/device:GPU:0'):
+                        concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model,
+                                               save_last_hidden_state=save_last_hidden_state)
             else:
                 raise ValueError('invalid test model')
 
@@ -652,43 +658,51 @@ def hyperparameter_search(event_list, time_window):
     print('iter {}, optimum fx: {}, optimum x: {}'.format(0, opt_object.fx_opt, opt_object.x_opt))
 
 
-def cell_search():
+def cell_search(cell_type):
     # 以随机搜索方式，用fuse hawkes rnn在3次入院长度，一年心功能2期这个任务让运行10次
     # 每次进行超参数设计后都让LSTM和GRU各跑一次，综合比较，选择模型
-    batch_size_list = [64, 128, 256, 512]
-    num_hidden_list = [16, 32, 64, 128]
-    autoencoder_list = [16, 32, 64, 128]
-
     time_window_list = ['三月', '一年']
     for item in time_window_list:
-        for i in range(10):
-            max_sequence_length = 3
-            batch_size = batch_size_list[random.randint(0, 3)]
-            learning_rate = 10**(random.uniform(-4, -1))
-            num_hidden = num_hidden_list[random.randint(0, 3)]
-            autoencoder = autoencoder_list[random.randint(0, 3)]
-            keep_rate_hidden = random.uniform(0.8, 1)
-            keep_rate_input = random.uniform(0.8, 1)
-            dae_weight = 10**(random.uniform(-1, 0))
+        if item == '一年':
+            max_sequence_length = 10
+            batch_size = 512
+            learning_rate = 0.001
+            num_hidden = 64
+            autoencoder = 16
+            keep_rate_hidden = 1
+            keep_rate_input = 0.8
+            dae_weight = 0.15
+        elif item == '三月':
+            max_sequence_length = 10
+            batch_size = 128
+            learning_rate = 0.008
+            num_hidden = 64
+            autoencoder = 32
+            keep_rate_hidden = 1
+            keep_rate_input = 0.8
+            dae_weight = 0.15
+        else:
+            raise ValueError('')
 
-            config = set_hyperparameter(time_window=item, batch_size=batch_size,
-                                        max_sequence_length=max_sequence_length, learning_rate=learning_rate,
-                                        num_hidden=num_hidden, keep_rate_input=keep_rate_input,
-                                        keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
-            model = 'cell_search'
-            new_graph = tf.Graph()
-            with new_graph.as_default():
-                hawkes_rnn_test(config, cell_type='lstm', autoencoder=autoencoder, model=model,
-                                save_last_hidden_state=False)
-            new_graph = tf.Graph()
-            with new_graph.as_default():
-                hawkes_rnn_test(config, cell_type='gru', autoencoder=autoencoder, model=model,
-                                save_last_hidden_state=False)
+        config = set_hyperparameter(time_window=item, batch_size=batch_size,
+                                    max_sequence_length=max_sequence_length, learning_rate=learning_rate,
+                                    num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                    keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
+        new_graph = tf.Graph()
+        with new_graph.as_default():
+            model = 'cell_search_fused_hawkes_rnn'
+            hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
+                            save_last_hidden_state=False)
+        new_graph = tf.Graph()
+        with new_graph.as_default():
+            model = 'cell_search_concat_hawkes_rnn'
+            concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
+                                   save_last_hidden_state=False)
 
 
 if __name__ == '__main__':
-    # cell_search()
+    # cell_search('lstm')
     # hyperparameter_search(event_list=['心功能2级'], time_window='三月')
-    performance_test(data_length=10, test_model=4, event_list=None, save_last_hidden_state=True)
-    # length_test(test_model=0, event_list=['其它'])
+    performance_test(data_length=10, test_model=5, event_list=None, save_last_hidden_state=True)
+    # length_test(test_model=0, event_list=None)
     print('complete')

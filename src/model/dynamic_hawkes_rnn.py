@@ -311,7 +311,8 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
             autoencoder_initializer)
 
     with tf.name_scope('hawkes_rnn'):
-        outputs, final_state = _hawkes_dynamic_rnn(cell, processed_input, sequence_length, initial_state,
+        input_ = tf.concat([processed_input, event_placeholder], axis=2)
+        outputs, final_state = _hawkes_dynamic_rnn(cell, input_, sequence_length, initial_state,
                                                    base_intensity=base_intensity, task_index=task_index,
                                                    mutual_intensity=mutual_intensity, time_list=time_list,
                                                    event_list=event_placeholder)
@@ -338,7 +339,8 @@ def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_r
 
     with tf.name_scope('loss'):
         with tf.name_scope('pred_loss'):
-            loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction, multi_class_labels=y_placeholder)
+            loss_pred = tf.losses.sigmoid_cross_entropy(logits=unnormalized_prediction,
+                                                        multi_class_labels=y_placeholder)
 
         with tf.name_scope('dae_loss'):
             if autoencoder_length > 0:
@@ -414,14 +416,14 @@ def unit_test():
                          bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
                          name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state = \
             hawkes_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
                              phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden, weight_initializer=initializer_o, bias_initializer=initializer_z,
                          keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator, name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state = \
             hawkes_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
                              phase_indicator, autoencoder_length)
 
@@ -430,7 +432,7 @@ def unit_test():
                           bias_initializer=initializer_z, keep_prob=keep_prob, phase_indicator=phase_indicator,
                           name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            base_intensity, mutual_intensity, time_list, task_index, sequence_length = \
+            base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state = \
             hawkes_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
                              phase_indicator, autoencoder_length)
     else:

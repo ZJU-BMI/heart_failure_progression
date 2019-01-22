@@ -2,44 +2,113 @@
 import os
 import csv
 import numpy as np
+from itertools import islice
 from sklearn import metrics
 import matplotlib.pyplot as plt
 
 
 def main():
     root_folder = os.path.abspath('..\\..\\..\\resource\\prediction_result')
-    model_folder = os.path.join(root_folder, 'cell_search_lstm')
-    file_name = 'prediction_label_一年心功能2级_20181222151442.csv'
-    save_name = file_name.split('_')[2]
-    file_path = os.path.join(model_folder, file_name)
-    result_dict = read_data(file_path)
+    save_path = os.path.join(root_folder, 'roc_pr_curve')
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    vanilla_rnn_model_folder_path = os.path.join(root_folder, 'vanilla_rnn_autoencoder_true_gru')
+    hawkes_rnn_model_folder_path = os.path.join(root_folder, 'hawkes_rnn_autoencoder_true_gru')
+    concat_hawkes_rnn_model_folder_path = os.path.join(root_folder, 'concat_hawkes_rnn_autoencoder_true_gru')
+    base_model_file_path = os.path.join(root_folder, 'traditional_ml\\传统模型预测细节.csv')
 
-    label = result_dict['label']
-    prediction = result_dict['prediction']
-    auc, roc_list = get_roc(label, prediction)
-    pr_list = get_pr(label, prediction)
+    time_window_chn = ['一年', '三月']
+    event_type_chn = ['癌症', '肾病入院', '肺病', '死亡', '心功能1级', '心功能2级', '心功能3级',
+                      '心功能4级', '再血管化手术', '其它']
+    time_windows_eng = ['1Y', '3M']
+    event_type_eng = ['cancer', 'renal dysfunction', 'lung disease', 'death', 'NYHA 1', 'NYHA 2', 'NYHA 3',
+                      'NYHA 4', 'revascularization', 'others']
+    event_chn = list()
+    event_eng = list()
+    for i in range(len(time_window_chn)):
+        for j in range(len(event_type_chn)):
+            event_chn.append(time_window_chn[i]+event_type_chn[j])
+            event_eng.append(time_windows_eng[i]+'-'+event_type_eng[j])
+    map_dict = dict()
+    for i in range(len(event_chn)):
+        map_dict[event_chn[i]] = event_eng[i]
 
-    threshold, fpr, tpr = roc_list
-    plt.title('ROC', fontproperties="SimHei")
-    plt.plot(fpr, tpr, 'b', label='AUC = %0.2f' % auc)
-    plt.legend(loc='lower right')
-    plt.plot([0, 1], [0, 1], 'r--')
-    plt.xlim([0, 1])
-    plt.ylim([0, 1])
-    plt.ylabel('True Positive Rate')
-    plt.xlabel('False Positive Rate')
-    plt.savefig(os.path.join(model_folder, 'roc_'+save_name))
-    plt.clf()
+    base_data = read_base_data(event_chn, base_model_file_path)
+    vanilla_result_dict = read_rnn_data(event_chn, vanilla_rnn_model_folder_path)
+    hawkes_result_dict = read_rnn_data(event_chn, hawkes_rnn_model_folder_path)
+    concat_hawkes_result_dict = read_rnn_data(event_chn, concat_hawkes_rnn_model_folder_path)
 
-    precision, recall, thresholds = pr_list
-    plt.title('{} PR', fontproperties="SimHei")
-    plt.plot(recall, precision, 'b')
-    plt.legend(loc='lower right')
-    plt.plot([0, 1], [0, 1], 'r--')
-    plt.xlim([0, 1])
-    plt.ylim([0, 1])
-    plt.savefig(os.path.join(model_folder, 'pr_'+save_name))
-    plt.clf()
+    index = 1
+    plt.rc('font', family='Times New Roman')
+    fig = plt.figure(figsize=(12, 12))
+    fig.subplots_adjust(hspace=0, wspace=0)
+    for key in base_data:
+        base_data_label = base_data[key]['label']
+        base_data_prediction = base_data[key]['prediction']
+        vanilla_label = vanilla_result_dict[key]['label']
+        vanilla_prediction = vanilla_result_dict[key]['prediction']
+        hawkes_label = hawkes_result_dict[key]['label']
+        hawkes_prediction = hawkes_result_dict[key]['prediction']
+        concat_hawkes_label = concat_hawkes_result_dict[key]['label']
+        concat_hawkes_prediction = concat_hawkes_result_dict[key]['prediction']
+
+        """
+        base_fpr, base_tpr, base_thresholds = metrics.roc_curve(base_data_label, base_data_prediction)
+        vanilla_fpr, vanilla_tpr, vanilla_thresholds = metrics.roc_curve(vanilla_label, vanilla_prediction)
+        hawkes_fpr, hawkes_tpr, hawkes_thresholds = metrics.roc_curve(hawkes_label, hawkes_prediction)
+        
+        
+        plt.figure()
+        lw = 2
+        plt.figure(figsize=(10, 10))
+        plt.plot(base_fpr, base_tpr, color='green', lw=lw, label='LR')
+        plt.plot(vanilla_fpr, vanilla_tpr, color='blue', lw=lw, label='Vanilla RNN')
+        plt.plot(hawkes_fpr, hawkes_tpr, color='red', lw=lw, label='Hawkes RNN')
+        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.title('{} ROC'.format(map_dict[key]), fontsize=30)
+        plt.legend(loc="lower right", prop={'size': 30})
+        plt.savefig(os.path.join(save_path, '{} ROC'.format(map_dict[key])))
+        """
+
+        base_p, base_r, base_thresholds = metrics.precision_recall_curve(base_data_label, base_data_prediction)
+        vanilla_p, vanilla_r, _ = metrics.precision_recall_curve(vanilla_label, vanilla_prediction)
+        hawkes_p, hawkes_r, _ = metrics.precision_recall_curve(hawkes_label, hawkes_prediction)
+        c_hawkes_p, c_hawkes_r, _ = metrics.precision_recall_curve(concat_hawkes_label, concat_hawkes_prediction)
+
+        axs = fig.add_subplot(4, 5, index)
+        l1 = axs.plot(base_p, base_r, color='green', label='LR', linewidth=1)[0]
+        l2 = axs.plot(vanilla_p, vanilla_r, color='blue', label='GRU RNN', linewidth=1)[0]
+        l3 = axs.plot(hawkes_p, hawkes_r, color='red', label='Fused Hawkes RNN', linewidth=1)[0]
+        l4 = axs.plot(c_hawkes_p, c_hawkes_r, color='orange', label='Concatenate Hawkes RNN', linewidth=1)[0]
+        axs.set_title('{}'.format(map_dict[key]), fontsize=15, fontweight='bold')
+
+        if index % 5 == 1:
+            axs.set_yticks([0.0, 1.0, 1.0])
+            axs.set_ylabel('Precision', fontsize=20, fontweight='bold')
+        else:
+            plt.setp(axs.get_yticklabels(), visible=False)
+            plt.setp(axs.get_yaxis(), visible=False)
+        if index >= 15:
+            axs.set_xticks([0.0, 1.0, 1.0], fontsize=15)
+            axs.set_xlabel('Recall', fontsize=20, fontweight='bold')
+        else:
+            plt.setp(axs.get_xticklabels(), visible=False)
+            plt.setp(axs.get_xaxis(), visible=False)
+
+        index += 1
+
+    legend = fig.legend([l1, l2, l3, l4],
+                        labels=['LR', 'GRU RNN', 'Fused Hawkes RNN', 'Concatenate Hawkes RNN'],
+                        borderaxespad=0,
+                        ncol=4,
+                        fontsize=15,
+                        loc='center',
+                        bbox_to_anchor=[0.5, 1.03],
+                        )
+    fig.show()
+    fig.savefig(os.path.join(save_path, 'figure'), bbox_inches='tight', bbox_extra_artists=(legend,))
 
 
 def get_roc(label, prediction):
@@ -57,17 +126,38 @@ def get_pr(label, prediction):
     return precision, recall, thresholds
 
 
-def read_data(file_path, skip_line=22):
-    result_dict = {'label': list(), 'prediction': list()}
+def read_rnn_data(event_chn, folder_path, skip_line=24):
+    result_dict = dict()
+    for target in event_chn:
+        result_dict[target] = {'label': [], 'prediction': []}
+        file_list = os.listdir(folder_path)
+        for item in file_list:
+            if not (item.__contains__('label') and item.__contains__(target)):
+                continue
+            file_name = os.path.join(folder_path, item)
+            with open(file_name, 'r', encoding='gbk', newline="") as file:
+                csv_reader = csv.reader(file)
+                for i, line in enumerate(csv_reader):
+                    if i < skip_line:
+                        continue
+                    result_dict[target]['label'].append(float(line[0]))
+                    result_dict[target]['prediction'].append(float(line[1]))
+    return result_dict
+
+
+def read_base_data(event_list, file_path):
+    # 只读LR
+    result_dict = dict()
+    for target in event_list:
+        result_dict[target] = {'label': [], 'prediction': []}
+
     with open(file_path, 'r', encoding='gbk', newline="") as file:
         csv_reader = csv.reader(file)
-        for i, line in enumerate(csv_reader):
-            if i < skip_line:
+        for line in islice(csv_reader, 1, None):
+            if line[3] != 'lr' or not result_dict.__contains__(line[2]):
                 continue
-            result_dict['label'].append(float(line[0]))
-            result_dict['prediction'].append(float(line[1]))
-    result_dict['label'] = np.array(result_dict['label'])
-    result_dict['prediction'] = np.array(result_dict['prediction'])
+            result_dict[line[2]]['label'].append(float(line[5]))
+            result_dict[line[2]]['prediction'].append(float(line[6]))
     return result_dict
 
 
