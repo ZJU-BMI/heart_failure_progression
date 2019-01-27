@@ -10,9 +10,18 @@ def main():
 
     # 建立数据模板
     model_type_list = ['concat_hawkes_rnn_autoencoder_true_gru',
+                       'concat_hawkes_rnn_autoencoder_false_gru',
                        'hawkes_rnn_autoencoder_true_gru',
+                       'hawkes_rnn_autoencoder_false_gru',
+                       'vanilla_rnn_autoencoder_true_gru',
                        'vanilla_rnn_autoencoder_false_gru',
-                       'vanilla_rnn_autoencoder_true_gru']
+                       # 'cell_search_concat_hawkes_rnn_gru',
+                       # 'cell_search_concat_hawkes_rnn_lstm',
+                       # 'cell_search_fused_hawkes_rnn_gru',
+                       # 'cell_search_fused_hawkes_rnn_lstm',
+                       # 'cell_search_vanilla_rnn_gru',
+                       # 'cell_search_vanilla_rnn_lstm'
+                       ]
     time_window = ['三月', '一年']
     event_order = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术',
                    '死亡', '肺病', '其它', '肾病入院', '癌症']
@@ -37,7 +46,8 @@ def main():
             if not file_name.__contains__('result'):
                 continue
             file_path = os.path.join('%s\\%s' % (result_folder, file_name))
-            task_type = file_name.split('_')[3] + file_name.split('_')[4]
+            print(file_name)
+            task_type = file_name.split('_')[2] + '_' + file_name.split('_')[3] + '_' + file_name.split('_')[4]
             case_list[model].append(task_type)
 
             auc_list = np.zeros(50)
@@ -53,10 +63,7 @@ def main():
                 result_dict[model][task_type] = [mean, ci]
 
     data_to_write = list()
-    head = ['']
-    for item in model_type_list:
-        head.append(item)
-    data_to_write.append(head)
+    data_to_write.append(['model', 'task', 'performance'])
     for model in model_type_list:
         for event in case_list[model]:
             mean, ci = result_dict[model][event]

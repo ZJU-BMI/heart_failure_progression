@@ -30,7 +30,7 @@ def get_metrics(prediction, label, threshold=0.2):
     return accuracy, precision, recall, f1, auc
 
 
-def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, save_last_hidden_state):
+def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_case=0):
     max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -75,12 +75,20 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, save_
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator, sequence_length, final_state, train_node]
-        mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='vanilla_rnn',
-                                                model_name=model, save_last_hidden_state=save_last_hidden_state)
+        if test_case == 0:
+            mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='vanilla_rnn',
+                                                    model_name=model)
+        elif test_case == 1:
+            generate_hidden_state(shared_hyperparameter, node_list, model_type='vanilla_rnn', model_name=model)
+            mean_auc = 0
+        else:
+            raise ValueError('')
     return mean_auc
 
 
-def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, save_last_hidden_state):
+def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_case=0):
+    # test case = 0 五折交叉验证
+    # test case = 1 tsne 用
     max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -124,12 +132,16 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, save_l
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator,  base_intensity, mutual_intensity, time_list, task_index, sequence_length,
                      final_state, train_node]
-        mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
-                                                model_name=model, save_last_hidden_state=save_last_hidden_state)
+        if test_case == 0:
+            mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
+                                                    model_name=model)
+        elif test_case == 1:
+            generate_hidden_state(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
+            mean_auc = 0
     return mean_auc
 
 
-def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, save_last_hidden_state):
+def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_case=0):
     max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -180,15 +192,21 @@ def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model,
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator, base_intensity, mutual_intensity, time_list, task_index, sequence_length,
                      concat_final_state, train_node]
-        mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
-                                                model_name=model, save_last_hidden_state=save_last_hidden_state)
+        if test_case == 0:
+            mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
+                                                    model_name=model)
+        elif test_case == 1:
+            generate_hidden_state(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
+            mean_auc = 0
+        else:
+            raise ValueError('')
         return mean_auc
 
 
-def run_graph(data_source, max_step, node_list, validate_step_interval, task_name, experiment_config, model):
+def run_graph(data_source, max_step, node_list, validate_step_interval, task_name, experiment_config, model,
+              terminate_number=10):
 
-    best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0, 'prediction_label': list(),
-                   'last_hidden_state': None}
+    best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0, 'prediction_label': list()}
 
     mutual_intensity_path = experiment_config['mutual_intensity_path']
     base_intensity_path = experiment_config['base_intensity_path']
@@ -202,78 +220,75 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
     config.gpu_options.allow_growth = True
 
     init = tf.global_variables_initializer()
-    with tf.Session(config=config) as sess:
-        sess.run(init)
-        no_improve_count = 0
-        minimum_loss = 10000
+    sess = tf.Session(config=config)
+    sess.run(init)
+    no_improve_count = 0
+    minimum_loss = 10000
 
-        for step in range(max_step):
-            train_node = node_list[-1]
-            last_hidden_state = node_list[-2]
-            loss = node_list[0]
-            prediction = node_list[1]
-            train_feed_dict, train_label = feed_dict_and_label(data_object=data_source, node_list=node_list,
-                                                               base_intensity_value=base_intensity_value,
-                                                               task_index=task_index, phase=2, model=model,
-                                                               mutual_intensity_value=mutual_intensity_value,
-                                                               task_name=task_name)
-            sess.run(train_node, feed_dict=train_feed_dict)
+    for step in range(max_step):
+        train_node = node_list[-1]
+        loss = node_list[0]
+        prediction = node_list[1]
+        train_feed_dict, train_label = feed_dict_and_label(data_object=data_source, node_list=node_list,
+                                                           base_intensity_value=base_intensity_value,
+                                                           task_index=task_index, phase=2, model=model,
+                                                           mutual_intensity_value=mutual_intensity_value,
+                                                           task_name=task_name)
+        sess.run(train_node, feed_dict=train_feed_dict)
 
-            # Test Performance
-            if step % validate_step_interval == 0:
-                validate_feed_dict, validate_label =\
-                    feed_dict_and_label(data_object=data_source, node_list=node_list, task_index=task_index,
-                                        base_intensity_value=base_intensity_value, phase=3, model=model,
-                                        mutual_intensity_value=mutual_intensity_value, task_name=task_name)
+        # Test Performance
+        if step % validate_step_interval == 0:
+            validate_feed_dict, validate_label =\
+                feed_dict_and_label(data_object=data_source, node_list=node_list, task_index=task_index,
+                                    base_intensity_value=base_intensity_value, phase=3, model=model,
+                                    mutual_intensity_value=mutual_intensity_value, task_name=task_name)
+            test_feed_dict, test_label = \
+                feed_dict_and_label(data_object=data_source, node_list=node_list, task_index=task_index,
+                                    base_intensity_value=base_intensity_value, phase=1, model=model,
+                                    mutual_intensity_value=mutual_intensity_value, task_name=task_name)
 
-                test_feed_dict, test_label = \
-                    feed_dict_and_label(data_object=data_source, node_list=node_list, task_index=task_index,
-                                        base_intensity_value=base_intensity_value, phase=1, model=model,
-                                        mutual_intensity_value=mutual_intensity_value, task_name=task_name)
+            train_loss, train_prediction = sess.run([loss, prediction], feed_dict=train_feed_dict)
+            validate_loss, validate_prediction = sess.run([loss, prediction], feed_dict=validate_feed_dict)
+            test_loss, test_prediction = sess.run([loss, prediction], feed_dict=test_feed_dict)
 
-                train_loss, train_prediction = sess.run([loss, prediction], feed_dict=train_feed_dict)
-                validate_loss, validate_prediction = sess.run([loss, prediction], feed_dict=validate_feed_dict)
-                test_loss, test_prediction, test_hidden_state = sess.run([loss, prediction, last_hidden_state],
-                                                                         feed_dict=test_feed_dict)
+            _, _, _, _, auc_train = get_metrics(train_prediction, train_label)
+            _, _, _, _, auc_validate = get_metrics(validate_prediction, validate_label)
+            accuracy, precision, recall, f1, auc = get_metrics(test_prediction, test_label)
+            result_template = 'iter:{}, train: loss:{:.5f}, auc:{:.4f}. validate: loss:{:.5f}, auc:{:.4f}'
+            result = result_template.format(step, train_loss, auc_train, validate_loss, auc_validate)
+            print(result)
 
-                _, _, _, _, auc_train = get_metrics(train_prediction, train_label)
-                _, _, _, _, auc_validate = get_metrics(validate_prediction, validate_label)
-                accuracy, precision, recall, f1, auc = get_metrics(test_prediction, test_label)
-                result_template = 'iter:{}, train: loss:{:.5f}, auc:{:.4f}. validate: loss:{:.5f}, auc:{:.4f}'
-                result = result_template.format(step, train_loss, auc_train, validate_loss, auc_validate)
-                print(result)
+            # 虽然Test Set可以直接被算出，但是不打印，测试过程中无法看到Test Set性能的变化
+            # 因此也就不存在"偷看标签"的问题
+            # 之所以这么设计，主要是因为标准的Early Stop模型要不断的存取模型副本，然后训练完了再计算测试集性能
+            #  这个跑法有点麻烦，而且我们其实也不是特别需要把模型存起来
 
-                # 虽然Test Set可以直接被算出，但是不打印，测试过程中无法看到Test Set性能的变化
-                # 因此也就不存在"偷看标签"的问题
-                # 之所以这么设计，主要是因为标准的Early Stop模型要不断的存取模型副本，然后训练完了再计算测试集性能
-                # 这个跑法有点麻烦，而且我们其实也不是特别需要把模型存起来
+            #  性能记录与Early Stop的实现，前三次不记录（防止出现训练了还不如不训练的情况）
+            if step < validate_step_interval * 3:
+                continue
 
-                # 性能记录与Early Stop的实现，前三次不记录（防止出现训练了还不如不训练的情况）
-                if step < validate_step_interval * 3:
-                    continue
-
-                if validate_loss >= minimum_loss:
-                    # 连续10次验证集性能无差别，则停止训练
-                    if no_improve_count >= validate_step_interval * 10:
-                        break
-                    else:
-                        no_improve_count += validate_step_interval
-                else:
-                    no_improve_count = 0
-                    minimum_loss = validate_loss
-                    test_label_prediction = np.concatenate([test_label, test_prediction], axis=1)
-                    best_result['auc'] = auc
-                    best_result['acc'] = accuracy
-                    best_result['precision'] = precision
-                    best_result['recall'] = recall
-                    best_result['f1'] = f1
-                    best_result['prediction_label'] = test_label_prediction
-                    best_result['last_hidden_state'] = {'label': test_label, 'hidden_state': test_hidden_state}
-
-                if validate_label.sum() < 0.5 or test_prediction.sum() < 0.5 or train_label.sum() < 0.5:
+            if validate_loss >= minimum_loss:
+                # 连续10次验证集性能无差别，则停止训练
+                if no_improve_count >= validate_step_interval * terminate_number:
                     break
+                else:
+                    no_improve_count += validate_step_interval
+            else:
+                no_improve_count = 0
+                minimum_loss = validate_loss
+                test_label_prediction = np.concatenate([test_label, test_prediction], axis=1)
+                best_result['auc'] = auc
+                best_result['acc'] = accuracy
+                best_result['precision'] = precision
+                best_result['recall'] = recall
+                best_result['f1'] = f1
+                best_result['prediction_label'] = test_label_prediction
 
-    return best_result
+            if validate_label.sum() < 0.5:
+                break
+
+    # 输出最优结果与当前模型（通过node_list输出）
+    return best_result, node_list, sess
 
 
 def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, model, mutual_intensity_value,
@@ -318,6 +333,19 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, mo
                     time_interval_value[i][j] = 0
                 elif j < input_sequence_length[i]:
                     time_interval_value[i][j] = input_t[i][j] - input_t[i][j-1]
+    # 全数据测试
+    elif phase == 4:
+        input_event, input_context, input_t, input_sequence_length, input_y = data_object.get_all_data(task_name)
+        input_y = input_y[:, np.newaxis]
+        phase_value = 1
+        batch_size_value = len(input_event[0])
+        time_interval_value = np.zeros([len(input_event[0]), len(input_event)])
+        for i in range(len(input_event[0])):
+            for j in range(len(input_event)):
+                if j == 0:
+                    time_interval_value[i][j] = 0
+                elif j < input_sequence_length[i]:
+                    time_interval_value[i][j] = input_t[i][j] - input_t[i][j-1]
 
     else:
         raise ValueError('invalid phase')
@@ -342,7 +370,7 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, mo
         raise ValueError('invalid model name')
 
 
-def five_fold_validation_default(experiment_config, node_list, model_type, model_name, save_last_hidden_state):
+def five_fold_validation_default(experiment_config, node_list, model_type, model_name):
     max_length = experiment_config['max_sequence_length']
     data_folder = experiment_config['data_folder']
     batch_size = experiment_config['batch_size']
@@ -357,13 +385,11 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
     for task in event_list:
         result_record = dict()
         prediction_label_dict = dict()
-        last_hidden_state_dict = dict()
-        for j in range(5):
+        for j in range(1):
             if not result_record.__contains__(j):
                 result_record[j] = dict()
                 prediction_label_dict[j] = dict()
-                last_hidden_state_dict[j] = dict()
-            for i in range(10):
+            for i in range(1):
                 # 输出当前实验设置
                 print('{}_repeat_{}_fold_{}_task_{}_log'.format(model_name, i, j, task))
                 for key in experiment_config:
@@ -373,15 +399,13 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
                 data_source = DataSource(data_folder, data_length=max_length, validate_fold_num=j,
                                          batch_size=batch_size, repeat=i)
 
-                best_result = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
-                                        validate_step_interval=validate_step_interval, model=model_type,
-                                        experiment_config=experiment_config, task_name=task)
-
+                best_result, _, sess = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
+                                                 validate_step_interval=validate_step_interval, model=model_type,
+                                                 experiment_config=experiment_config, task_name=task)
+                sess.close()
                 prediction_label = best_result.pop('prediction_label')
-                last_hidden_state = best_result.pop('last_hidden_state')
                 result_record[j][i] = best_result
                 prediction_label_dict[j][i] = prediction_label
-                last_hidden_state_dict[j][i] = last_hidden_state
                 print(task)
                 print(best_result)
 
@@ -399,8 +423,7 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
             for p in result_record[q]:
                 auc_mean += result_record[q][p]['auc']
         best_auc[task] = auc_mean/50
-        save_result(metric_folder, experiment_config, result_record, prediction_label_dict, last_hidden_state_dict,
-                    task, save_last_hidden_state)
+        save_result(metric_folder, experiment_config, result_record, prediction_label_dict, task)
 
     # 最后返回综合AUC作为性能评价指标（其实不太合适，但是就这样吧）
     mean_auc = 0
@@ -410,8 +433,7 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
     return mean_auc
 
 
-def save_result(save_folder, experiment_config, result_record, prediction_label_dict, last_hidden_state_dict, task_name,
-                save_last_state):
+def save_result(save_folder, experiment_config, result_record, prediction_label_dict, task_name):
 
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
@@ -431,22 +453,6 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
                 data_to_write.append(prediction_label_dict[j][i][k])
     with open(save_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(data_to_write)
-
-    # 存储最后一个hidden state
-    if save_last_state:
-        for j in last_hidden_state_dict:
-            for i in last_hidden_state_dict[j]:
-                last_hidden_state = last_hidden_state_dict[j][i]['hidden_state']
-                hidden_state_label = last_hidden_state_dict[j][i]['label']
-                save_path = os.path.join(save_folder, 'last_hidden_state')
-                if not os.path.exists(save_path):
-                    os.makedirs(save_path)
-                hidden_state_save_path = os.path.join(save_path, 'last_hidden_state_{}_{}_fold_{}_repeat_{}.npy'.format(
-                    max_sequence_length, task_name, j, i, current_time))
-                label_save_path = os.path.join(save_path, 'label_{}_{}_fold_{}_repeat_{}.npy'.format(
-                    max_sequence_length, task_name, j, i, current_time))
-                np.save(hidden_state_save_path, last_hidden_state)
-                np.save(label_save_path, hidden_state_label)
 
     # 存储综合性能
     save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length, task_name,
@@ -540,10 +546,10 @@ def set_hyperparameter(time_window, max_sequence_length=10, batch_size=256, dae_
 
 def length_test(test_model, event_list):
     for i in range(9, 2, -1):
-        performance_test(data_length=i, test_model=test_model, event_list=event_list, save_last_hidden_state=False)
+        performance_test(data_length=i, test_model=test_model, event_list=event_list)
 
 
-def performance_test(data_length, test_model, save_last_hidden_state, event_list=None):
+def performance_test(data_length, test_model, event_list=None):
     time_window_list = ['一年', '三月']
     for cell_type in ['gru']:
         for item in time_window_list:
@@ -578,45 +584,113 @@ def performance_test(data_length, test_model, save_last_hidden_state, event_list
                 new_graph = tf.Graph()
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
-                        hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
-                                        save_last_hidden_state=save_last_hidden_state)
+                        hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
             elif test_model == 1:
                 new_graph = tf.Graph()
                 model = 'hawkes_rnn_autoencoder_false'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
-                        hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model,
-                                        save_last_hidden_state=save_last_hidden_state)
+                        hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
             elif test_model == 2:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_true'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
-                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
-                                         save_last_hidden_state=save_last_hidden_state)
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
             elif test_model == 3:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_false'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
-                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model,
-                                         save_last_hidden_state=save_last_hidden_state)
+                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
             elif test_model == 4:
                 new_graph = tf.Graph()
                 model = 'concat_hawkes_rnn_autoencoder_true'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
-                        concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
-                                               save_last_hidden_state=save_last_hidden_state)
+                        concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
             elif test_model == 5:
                 new_graph = tf.Graph()
                 model = 'concat_hawkes_rnn_autoencoder_false'
                 with new_graph.as_default():
-                    with  tf.device('/device:GPU:0'):
-                        concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model,
-                                               save_last_hidden_state=save_last_hidden_state)
+                    with tf.device('/device:GPU:0'):
+                        concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
             else:
                 raise ValueError('invalid test model')
+
+
+def generate_hidden_state_for_tsne():
+    # 为了展示最好的tsne效果，这里的所有参数全部是选过的，每个任务都不一样，参数分别为。每个测试集默认选择
+    # 0 fold 为验证集，然后再全数据上进行representation生成
+    # concat_hawkes_rnn_gru	cell_search_concat_hawkes_rnn_gru	三月再血管化手术20190123041603.csv
+
+    save_path = os.path.abspath('../../resource/prediction_result/tsne/')
+    max_sequence_length = 10
+    cell_type = 'gru'
+    time_window = '一年'
+    event_list = ['再血管化手术']
+    learning_rate = 0.01
+    num_hidden = 64
+    batch_size = 128
+    keep_rate_hidden = 1
+    keep_rate_input = 0.8
+    dae_weight = 0.8
+    autoencoder = 32
+
+    config = set_hyperparameter(time_window=time_window, batch_size=batch_size, event_list=event_list,
+                                max_sequence_length=max_sequence_length, learning_rate=learning_rate,
+                                num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
+    config['tsne_save_path'] = save_path
+
+    vanilla_rnn_test(config, cell_type, autoencoder, 'vanilla_rnn', test_case=1)
+    # hawkes_rnn_test(config, cell_type, autoencoder, 'fused_hawkes_rnn', test_case=1)
+    # concat_hawkes_rnn_test(config, cell_type, autoencoder, 'concat_hawkes_rnn', test_case=1)
+    return 0
+
+
+def generate_hidden_state(experiment_config, node_list, model_type, model_name, repeat=0, fold=0):
+    max_length = experiment_config['max_sequence_length']
+    data_folder = experiment_config['data_folder']
+    batch_size = experiment_config['batch_size']
+    event_list = experiment_config['event_list']
+    max_iter = experiment_config['max_iter']
+    validate_step_interval = experiment_config['validate_step_interval']
+    task_name = event_list[0]
+    save_path = experiment_config['tsne_save_path']
+
+    # 从洗过的数据中读取数据
+    data_source = DataSource(data_folder, data_length=max_length, validate_fold_num=fold,
+                             batch_size=batch_size, repeat=repeat)
+    # 训练模型
+    best_result, node_list, sess = run_graph(data_source=data_source, max_step=max_iter, node_list=node_list,
+                                             validate_step_interval=validate_step_interval, model=model_type,
+                                             experiment_config=experiment_config, task_name=task_name,
+                                             terminate_number=3)
+    best_result.pop('prediction_label')
+    print(model_name)
+    print(best_result)
+    # 生成结果
+    event_id_dict = experiment_config['event_id_dict']
+    task_index = event_id_dict[task_name[2:]]
+    mutual_intensity_path = experiment_config['mutual_intensity_path']
+    base_intensity_path = experiment_config['base_intensity_path']
+    mutual_intensity_value = np.load(mutual_intensity_path)
+    base_intensity_value = np.load(base_intensity_path)
+    feed_dict, label = feed_dict_and_label(data_object=data_source, node_list=node_list,
+                                           base_intensity_value=base_intensity_value, task_index=task_index,
+                                           phase=4, model=model_type, mutual_intensity_value=mutual_intensity_value,
+                                           task_name=task_name)
+
+    loss, final_state_node = node_list[-1], node_list[-2]
+    _, final_state = sess.run([loss, final_state_node], feed_dict=feed_dict)
+    label = data_source.get_all_data(task_name)[4]
+    sess.close()
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    np.save(os.path.join(save_path, 'hidden_state_{}_{}'.format(model_name, task_name)), final_state)
+    np.save(os.path.join(save_path, 'label_{}_{}'.format(model_name, task_name)), label)
+    return 0
 
 
 def hyperparameter_search(event_list, time_window):
@@ -639,8 +713,7 @@ def hyperparameter_search(event_list, time_window):
         model = 'hyperparameter_search_hawkes_rnn_autoencoder_true'
         new_graph = tf.Graph()
         with new_graph.as_default():
-            mean_auc = hawkes_rnn_test(config, cell_type='gru', autoencoder=autoencoder, model=model,
-                                       save_last_hidden_state=False)
+            mean_auc = hawkes_rnn_test(config, cell_type='gru', autoencoder=autoencoder, model=model)
         return [[mean_auc]]
 
     max_sequence_length = 10
@@ -691,18 +764,17 @@ def cell_search(cell_type):
         new_graph = tf.Graph()
         with new_graph.as_default():
             model = 'cell_search_fused_hawkes_rnn'
-            hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
-                            save_last_hidden_state=False)
+            hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
         new_graph = tf.Graph()
         with new_graph.as_default():
             model = 'cell_search_concat_hawkes_rnn'
-            concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
-                                   save_last_hidden_state=False)
+            concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
 
 
 if __name__ == '__main__':
     # cell_search('lstm')
     # hyperparameter_search(event_list=['心功能2级'], time_window='三月')
-    performance_test(data_length=10, test_model=5, event_list=None, save_last_hidden_state=True)
-    # length_test(test_model=0, event_list=None)
+    performance_test(data_length=10, test_model=5, event_list=None)
+    # length_test(test_model=5, event_list=None)
+    generate_hidden_state_for_tsne()
     print('complete')

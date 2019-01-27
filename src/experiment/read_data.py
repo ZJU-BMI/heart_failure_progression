@@ -42,6 +42,39 @@ class DataSource(object):
 
         self.__current_batch_index = 0
 
+    def get_all_data(self, key_name):
+        event_count = self.__event_count
+
+        train_feature = self.__raw_train_feature
+        train_time = train_feature[:, :, event_count]
+        train_event = np.transpose(train_feature[:, :, 0: event_count], [1, 0, 2])
+        train_context = np.transpose(train_feature[:, :, event_count+1:], [1, 0, 2])
+        train_sequence_length = self.__raw_train_sequence_length
+        train_label = self.__raw_train_label[key_name]
+
+        validate_feature = self.__validation_feature
+        validate_time = validate_feature[:, :, event_count]
+        validate_event = np.transpose(validate_feature[:, :, 0: event_count], [1, 0, 2])
+        validate_context = np.transpose(validate_feature[:, :, event_count+1:], [1, 0, 2])
+        validate_sequence_length = self.__validation_sequence_length
+        validate_label = self.__validation_label[key_name]
+
+        test_feature = self.__test_feature
+        test_time = test_feature[:, :, event_count]
+        test_event = np.transpose(test_feature[:, :, 0: event_count], [1, 0, 2])
+        test_context = np.transpose(test_feature[:, :, event_count+1:], [1, 0, 2])
+        test_sequence_length = self.__test_sequence_length
+        test_label = self.__test_label[key_name]
+
+        event = np.concatenate([train_event, validate_event, test_event], axis=1)
+        context = np.concatenate([train_context, validate_context, test_context], axis=1)
+        sequence_length = np.concatenate([train_sequence_length, validate_sequence_length,
+                                          test_sequence_length], axis=0)
+        time = np.concatenate([train_time, validate_time, test_time], axis=0)
+        label = np.concatenate([train_label, validate_label, test_label])
+
+        return event, context, time, sequence_length, label
+
     def get_validation_label(self, key_name):
         validation_label = self.__validation_label[key_name]
         return validation_label
@@ -205,6 +238,7 @@ def unit_test():
         data_source.get_validation_feature()
     test_label = data_source.get_test_label('一年肾病入院')
     validation_label = data_source.get_test_label('一年肾病入院')
+    data = data_source.get_all_data('一年肾病入院')
     print(test_event)
     print(test_context)
     print(test_time)

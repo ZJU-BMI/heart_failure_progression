@@ -90,7 +90,7 @@ for i, perplexity in enumerate(perplexities):
     t1 = time()
     print("uniform grid, perplexity=%d in %.2g sec" % (perplexity, t1 - t0))
 
-    ax.set_title("Perplexity=%d" % perplexity)
+    ax.set_title("Per\nplexity=%d" % perplexity)
     ax.scatter(Y[:, 0], Y[:, 1], c=color)
     ax.xaxis.set_major_formatter(NullFormatter())
     ax.yaxis.set_major_formatter(NullFormatter())

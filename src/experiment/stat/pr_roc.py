@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 
 
 def main():
-    root_folder = os.path.abspath('..\\..\\..\\resource\\prediction_result')
+    root_folder = os.path.abspath('..\\..\\..\\resource\\prediction_result\\best_result')
     save_path = os.path.join(root_folder, 'roc_pr_curve')
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     vanilla_rnn_model_folder_path = os.path.join(root_folder, 'vanilla_rnn_autoencoder_true_gru')
-    hawkes_rnn_model_folder_path = os.path.join(root_folder, 'hawkes_rnn_autoencoder_true_gru')
+    hawkes_rnn_model_folder_path = os.path.join(root_folder, 'fused_hawkes_rnn_autoencoder_true_gru')
     concat_hawkes_rnn_model_folder_path = os.path.join(root_folder, 'concat_hawkes_rnn_autoencoder_true_gru')
     base_model_file_path = os.path.join(root_folder, 'traditional_ml\\传统模型预测细节.csv')
 
@@ -21,8 +21,8 @@ def main():
     event_type_chn = ['癌症', '肾病入院', '肺病', '死亡', '心功能1级', '心功能2级', '心功能3级',
                       '心功能4级', '再血管化手术', '其它']
     time_windows_eng = ['1Y', '3M']
-    event_type_eng = ['cancer', 'renal dysfunction', 'lung disease', 'death', 'NYHA 1', 'NYHA 2', 'NYHA 3',
-                      'NYHA 4', 'revascularization', 'others']
+    event_type_eng = ['Cancer', 'Renal Dysfunction', 'Lung disease', 'Death', 'NYHA 1', 'NYHA 2', 'NYHA 3',
+                      'NYHA 4', 'Revascularization', 'Others']
     event_chn = list()
     event_eng = list()
     for i in range(len(time_window_chn)):
@@ -80,8 +80,8 @@ def main():
         axs = fig.add_subplot(4, 5, index)
         l1 = axs.plot(base_p, base_r, color='green', label='LR', linewidth=1)[0]
         l2 = axs.plot(vanilla_p, vanilla_r, color='blue', label='GRU RNN', linewidth=1)[0]
-        l3 = axs.plot(hawkes_p, hawkes_r, color='red', label='Fused Hawkes RNN', linewidth=1)[0]
-        l4 = axs.plot(c_hawkes_p, c_hawkes_r, color='orange', label='Concatenate Hawkes RNN', linewidth=1)[0]
+        l3 = axs.plot(hawkes_p, hawkes_r, color='red', label='FH-RNN', linewidth=1)[0]
+        l4 = axs.plot(c_hawkes_p, c_hawkes_r, color='orange', label='CH-RNN', linewidth=1)[0]
         axs.set_title('{}'.format(map_dict[key]), fontsize=15, fontweight='bold')
 
         if index % 5 == 1:
@@ -90,8 +90,8 @@ def main():
         else:
             plt.setp(axs.get_yticklabels(), visible=False)
             plt.setp(axs.get_yaxis(), visible=False)
-        if index >= 15:
-            axs.set_xticks([0.0, 1.0, 1.0], fontsize=15)
+        if index >= 16:
+            axs.set_xticks([0.0, 1.0, 1.0])
             axs.set_xlabel('Recall', fontsize=20, fontweight='bold')
         else:
             plt.setp(axs.get_xticklabels(), visible=False)
