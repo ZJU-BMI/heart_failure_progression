@@ -443,11 +443,12 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
 
     # 存储性能
     max_sequence_length = experiment_config['max_sequence_length']
+    data_fraction = experiment_config['data_fraction']
 
     # 存储预测与标签
     save_path = os.path.join(save_folder,
-                             'length_{}_prediction_label_{}_{}.csv'.format(max_sequence_length,
-                                                                           task_name, current_time))
+                             'length_{}_prediction_label_{}_{}_data_fraction_{}.csv'.
+                             format(max_sequence_length, task_name, current_time, data_fraction))
     data_to_write = [['label', 'prediction']]
     for key in experiment_config:
         data_to_write.append([key, experiment_config[key]])
