@@ -274,8 +274,8 @@ def _rnn_step(time, sequence_length, zero_output, state, call_cell):
     return final_output, final_state
 
 
-def hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                     phase_indicator, autoencoder_length, autoencoder_initializer=tf.initializers.orthogonal()):
+def fused_hawkes_rnn_model(cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                           phase_indicator, autoencoder_length, autoencoder_initializer=tf.initializers.orthogonal()):
     """
     :param cell:
     :param num_steps:

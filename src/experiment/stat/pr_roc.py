@@ -8,14 +8,11 @@ import matplotlib.pyplot as plt
 
 
 def main():
-    root_folder = os.path.abspath('..\\..\\..\\resource\\prediction_result\\best_result')
-    save_path = os.path.join(root_folder, 'roc_pr_curve')
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-    vanilla_rnn_model_folder_path = os.path.join(root_folder, 'vanilla_rnn_autoencoder_true_gru')
-    hawkes_rnn_model_folder_path = os.path.join(root_folder, 'fused_hawkes_rnn_autoencoder_true_gru')
-    concat_hawkes_rnn_model_folder_path = os.path.join(root_folder, 'concat_hawkes_rnn_autoencoder_true_gru')
-    base_model_file_path = os.path.join(root_folder, 'traditional_ml\\传统模型预测细节.csv')
+    save_path = os.path.abspath('..\\..\\..\\resource\\prediction_result\\best_result')
+    vanilla_rnn_model_folder_path = os.path.join(save_path, 'vanilla_rnn_autoencoder_true_gru')
+    hawkes_rnn_model_folder_path = os.path.join(save_path, 'fused_hawkes_rnn_autoencoder_true_gru')
+    concat_hawkes_rnn_model_folder_path = os.path.join(save_path, 'concat_hawkes_rnn_autoencoder_true_gru')
+    base_model_file_path = os.path.join(save_path, 'traditional_ml\\传统模型预测细节.csv')
 
     time_window_chn = ['一年', '三月']
     event_type_chn = ['癌症', '肾病入院', '肺病', '死亡', '心功能1级', '心功能2级', '心功能3级',
@@ -37,10 +34,68 @@ def main():
     vanilla_result_dict = read_rnn_data(event_chn, vanilla_rnn_model_folder_path)
     hawkes_result_dict = read_rnn_data(event_chn, hawkes_rnn_model_folder_path)
     concat_hawkes_result_dict = read_rnn_data(event_chn, concat_hawkes_rnn_model_folder_path)
+    plot_pr(base_data, vanilla_result_dict, hawkes_result_dict, concat_hawkes_result_dict, map_dict, save_path)
+    plot_roc(base_data, vanilla_result_dict, hawkes_result_dict, concat_hawkes_result_dict, map_dict, save_path)
 
+
+def plot_roc(base_data, vanilla_result_dict, hawkes_result_dict, concat_hawkes_result_dict, map_dict, save_path):
     index = 1
     plt.rc('font', family='Times New Roman')
-    fig = plt.figure(figsize=(12, 12))
+    fig = plt.figure(figsize=(8, 8))
+    fig.subplots_adjust(hspace=0, wspace=0)
+    for key in base_data:
+        base_data_label = base_data[key]['label']
+        base_data_prediction = base_data[key]['prediction']
+        vanilla_label = vanilla_result_dict[key]['label']
+        vanilla_prediction = vanilla_result_dict[key]['prediction']
+        hawkes_label = hawkes_result_dict[key]['label']
+        hawkes_prediction = hawkes_result_dict[key]['prediction']
+        concat_hawkes_label = concat_hawkes_result_dict[key]['label']
+        concat_hawkes_prediction = concat_hawkes_result_dict[key]['prediction']
+
+        base_fpr, base_tpr, base_thresholds = metrics.roc_curve(base_data_label, base_data_prediction)
+        vanilla_fpr, vanilla_tpr, vanilla_thresholds = metrics.roc_curve(vanilla_label, vanilla_prediction)
+        fh_fpr, fh_tpr, fh_thresholds = metrics.roc_curve(hawkes_label, hawkes_prediction)
+        ch_fpr, ch_tpr, ch_thresholds = metrics.roc_curve(concat_hawkes_label, concat_hawkes_prediction)
+
+        axs = fig.add_subplot(4, 5, index)
+        l1 = axs.plot(base_fpr, base_tpr, color='green', label='LR', linewidth=1)[0]
+        l2 = axs.plot(vanilla_fpr, vanilla_tpr, color='blue', label='GRU RNN', linewidth=1)[0]
+        l3 = axs.plot(fh_fpr, fh_tpr, color='red', label='FH-RNN', linewidth=1)[0]
+        l4 = axs.plot(ch_fpr, ch_tpr, color='orange', label='CH-RNN', linewidth=1)[0]
+        axs.set_title('{}'.format(map_dict[key]), fontsize=10, fontweight='bold')
+
+        if index % 5 == 1:
+            axs.set_yticks([0.0, 1.0, 1.0])
+            axs.set_ylabel('TPR', fontsize=10, fontweight='bold')
+        else:
+            plt.setp(axs.get_yticklabels(), visible=False)
+            plt.setp(axs.get_yaxis(), visible=False)
+        if index >= 16:
+            axs.set_xticks([0.0, 1.0, 1.0])
+            axs.set_xlabel('FPR', fontsize=10, fontweight='bold')
+        else:
+            plt.setp(axs.get_xticklabels(), visible=False)
+            plt.setp(axs.get_xaxis(), visible=False)
+
+        index += 1
+
+    legend = fig.legend([l1, l2, l3, l4],
+                        labels=['LR', 'RNN', 'FH-RNN', 'CH-RNN'],
+                        borderaxespad=0,
+                        ncol=4,
+                        fontsize=10,
+                        loc='center',
+                        bbox_to_anchor=[0.54, 1.03],
+                        )
+    fig.show()
+    fig.savefig(os.path.join(save_path, 'roc_curve'), bbox_inches='tight', bbox_extra_artists=(legend,))
+
+
+def plot_pr(base_data, vanilla_result_dict, hawkes_result_dict, concat_hawkes_result_dict, map_dict, save_path):
+    index = 1
+    plt.rc('font', family='Times New Roman')
+    fig = plt.figure(figsize=(8, 8))
     fig.subplots_adjust(hspace=0, wspace=0)
     for key in base_data:
         base_data_label = base_data[key]['label']
@@ -56,8 +111,8 @@ def main():
         base_fpr, base_tpr, base_thresholds = metrics.roc_curve(base_data_label, base_data_prediction)
         vanilla_fpr, vanilla_tpr, vanilla_thresholds = metrics.roc_curve(vanilla_label, vanilla_prediction)
         hawkes_fpr, hawkes_tpr, hawkes_thresholds = metrics.roc_curve(hawkes_label, hawkes_prediction)
-        
-        
+
+
         plt.figure()
         lw = 2
         plt.figure(figsize=(10, 10))
@@ -82,17 +137,17 @@ def main():
         l2 = axs.plot(vanilla_p, vanilla_r, color='blue', label='GRU RNN', linewidth=1)[0]
         l3 = axs.plot(hawkes_p, hawkes_r, color='red', label='FH-RNN', linewidth=1)[0]
         l4 = axs.plot(c_hawkes_p, c_hawkes_r, color='orange', label='CH-RNN', linewidth=1)[0]
-        axs.set_title('{}'.format(map_dict[key]), fontsize=15, fontweight='bold')
+        axs.set_title('{}'.format(map_dict[key]), fontsize=10, fontweight='bold')
 
         if index % 5 == 1:
             axs.set_yticks([0.0, 1.0, 1.0])
-            axs.set_ylabel('Precision', fontsize=20, fontweight='bold')
+            axs.set_ylabel('Precision', fontsize=10, fontweight='bold')
         else:
             plt.setp(axs.get_yticklabels(), visible=False)
             plt.setp(axs.get_yaxis(), visible=False)
         if index >= 16:
             axs.set_xticks([0.0, 1.0, 1.0])
-            axs.set_xlabel('Recall', fontsize=20, fontweight='bold')
+            axs.set_xlabel('Recall', fontsize=10, fontweight='bold')
         else:
             plt.setp(axs.get_xticklabels(), visible=False)
             plt.setp(axs.get_xaxis(), visible=False)
@@ -100,15 +155,15 @@ def main():
         index += 1
 
     legend = fig.legend([l1, l2, l3, l4],
-                        labels=['LR', 'GRU RNN', 'Fused Hawkes RNN', 'Concatenate Hawkes RNN'],
+                        labels=['LR', 'RNN', 'FH-RNN', 'CH-RNN'],
                         borderaxespad=0,
                         ncol=4,
-                        fontsize=15,
+                        fontsize=10,
                         loc='center',
-                        bbox_to_anchor=[0.5, 1.03],
+                        bbox_to_anchor=[0.54, 1.03],
                         )
     fig.show()
-    fig.savefig(os.path.join(save_path, 'figure'), bbox_inches='tight', bbox_extra_artists=(legend,))
+    fig.savefig(os.path.join(save_path, 'pr_curve'), bbox_inches='tight', bbox_extra_artists=(legend,))
 
 
 def get_roc(label, prediction):

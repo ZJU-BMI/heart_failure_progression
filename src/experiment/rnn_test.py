@@ -2,7 +2,7 @@ import tensorflow as tf
 from sklearn import metrics
 import numpy as np
 from experiment.read_data import DataSource
-from dynamic_hawkes_rnn import hawkes_rnn_model
+from dynamic_fused_hawkes_rnn import fused_hawkes_rnn_model
 from dynamic_vanilla_rnn import vanilla_rnn_model
 from dynamic_concat_hawkes_rnn import concat_hawkes_model
 from rnn_cell import RawCell, LSTMCell, GRUCell
@@ -30,7 +30,7 @@ def get_metrics(prediction, label, threshold=0.2):
     return accuracy, precision, recall, f1, auc
 
 
-def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_case=0):
+def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_model=0):
     max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -75,10 +75,10 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator, sequence_length, final_state, train_node]
-        if test_case == 0:
+        if test_model == 0:
             mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='vanilla_rnn',
                                                     model_name=model)
-        elif test_case == 1:
+        elif test_model == 1:
             generate_hidden_state(shared_hyperparameter, node_list, model_type='vanilla_rnn', model_name=model)
             mean_auc = 0
         else:
@@ -86,7 +86,7 @@ def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_
     return mean_auc
 
 
-def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_case=0):
+def fused_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_model=0):
     # test case = 0 五折交叉验证
     # test case = 1 tsne 用
     max_length = shared_hyperparameter['max_sequence_length']
@@ -124,24 +124,24 @@ def hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_c
 
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state = \
-            hawkes_rnn_model(num_steps=max_length, num_hidden=num_hidden, cell=cell, keep_rate_input=keep_rate_input,
-                             dae_weight=dae_weight, phase_indicator=phase_indicator, num_context=context_num,
-                             num_event=event_num, autoencoder_length=autoencoder)
+            fused_hawkes_rnn_model(num_steps=max_length, num_hidden=num_hidden, cell=cell, dae_weight=dae_weight,
+                                   keep_rate_input=keep_rate_input, phase_indicator=phase_indicator,
+                                   num_context=context_num, num_event=event_num, autoencoder_length=autoencoder)
         train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator,  base_intensity, mutual_intensity, time_list, task_index, sequence_length,
                      final_state, train_node]
-        if test_case == 0:
+        if test_model == 0:
             mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
                                                     model_name=model)
-        elif test_case == 1:
+        elif test_model == 1:
             generate_hidden_state(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
             mean_auc = 0
     return mean_auc
 
 
-def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_case=0):
+def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_model=0):
     max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -192,10 +192,10 @@ def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model,
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator, base_intensity, mutual_intensity, time_list, task_index, sequence_length,
                      concat_final_state, train_node]
-        if test_case == 0:
+        if test_model == 0:
             mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
                                                     model_name=model)
-        elif test_case == 1:
+        elif test_model == 1:
             generate_hidden_state(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
             mean_auc = 0
         else:
@@ -377,19 +377,21 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
     event_list = experiment_config['event_list']
     max_iter = experiment_config['max_iter']
     validate_step_interval = experiment_config['validate_step_interval']
+    data_fraction = experiment_config['data_fraction']
+    test_case = experiment_config['test_case']
 
-    metric_folder = os.path.join(experiment_config['prediction_result_folder'], model_name)
+    result_folder = os.path.join(experiment_config['prediction_result_folder'], test_case+'_'+model_name)
 
     # 五折交叉验证，跑十次
     best_auc = dict()
     for task in event_list:
         result_record = dict()
         prediction_label_dict = dict()
-        for j in range(1):
+        for j in range(5):
             if not result_record.__contains__(j):
                 result_record[j] = dict()
                 prediction_label_dict[j] = dict()
-            for i in range(1):
+            for i in range(10):
                 # 输出当前实验设置
                 print('{}_repeat_{}_fold_{}_task_{}_log'.format(model_name, i, j, task))
                 for key in experiment_config:
@@ -397,7 +399,7 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
 
                 # 从洗过的数据中读取数据
                 data_source = DataSource(data_folder, data_length=max_length, validate_fold_num=j,
-                                         batch_size=batch_size, repeat=i)
+                                         batch_size=batch_size, repeat=i, read_fraction=data_fraction)
 
                 best_result, _, sess = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
                                                  validate_step_interval=validate_step_interval, model=model_type,
@@ -423,7 +425,7 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
             for p in result_record[q]:
                 auc_mean += result_record[q][p]['auc']
         best_auc[task] = auc_mean/50
-        save_result(metric_folder, experiment_config, result_record, prediction_label_dict, task)
+        save_result(result_folder, experiment_config, result_record, prediction_label_dict, task)
 
     # 最后返回综合AUC作为性能评价指标（其实不太合适，但是就这样吧）
     mean_auc = 0
@@ -438,12 +440,14 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     current_time = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+
     # 存储性能
     max_sequence_length = experiment_config['max_sequence_length']
 
     # 存储预测与标签
-    save_path = os.path.join(save_folder, 'length_{}_prediction_label_{}_{}.csv'.format(max_sequence_length, task_name,
-                                                                                        current_time))
+    save_path = os.path.join(save_folder,
+                             'length_{}_prediction_label_{}_{}.csv'.format(max_sequence_length,
+                                                                           task_name, current_time))
     data_to_write = [['label', 'prediction']]
     for key in experiment_config:
         data_to_write.append([key, experiment_config[key]])
@@ -455,8 +459,8 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
         csv.writer(file).writerows(data_to_write)
 
     # 存储综合性能
-    save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length, task_name,
-                                                                              current_time))
+    save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length,
+                                                                              task_name, current_time))
     data_to_write = []
     for key in experiment_config:
         data_to_write.append([key, experiment_config[key]])
@@ -479,8 +483,8 @@ def save_result(save_folder, experiment_config, result_record, prediction_label_
         csv.writer(file).writerows(data_to_write)
 
 
-def set_hyperparameter(time_window, max_sequence_length=10, batch_size=256, dae_weight=1.0,
-                       learning_rate=0.001, num_hidden=32, keep_rate_hidden=1, keep_rate_input=0.8,
+def set_hyperparameter(time_window, test_case, data_fraction=1.0, max_sequence_length=10, batch_size=256,
+                       dae_weight=1.0, learning_rate=0.001, num_hidden=32, keep_rate_hidden=1, keep_rate_input=0.8,
                        event_list=None):
     """
     :return:
@@ -490,7 +494,6 @@ def set_hyperparameter(time_window, max_sequence_length=10, batch_size=256, dae_
     base_intensity_path = os.path.abspath('../../resource/hawkes_result/base.npy')
     model_save_path = os.path.abspath('../../resource/model_cache')
     model_graph_save_path = os.path.abspath('../../resource/model_diagram')
-    prediction_metric_folder = os.path.abspath('../../resource/prediction_metric/')
     prediction_result_folder = os.path.abspath('../../resource/prediction_result/')
 
     max_iter = 10000
@@ -538,18 +541,24 @@ def set_hyperparameter(time_window, max_sequence_length=10, batch_size=256, dae_
                             'event_list': event_list, 'mutual_intensity_path': mutual_intensity_path,
                             'base_intensity_path': base_intensity_path, 'event_id_dict': event_id_dict,
                             'event_num': event_num, 'context_num': context_num, 'num_hidden': num_hidden,
-                            'prediction_metric_folder': prediction_metric_folder,
-                            'model_path': model_save_path, 'prediction_result_folder': prediction_result_folder,
-                            'model_graph_save_path': model_graph_save_path}
+                            'test_case': test_case, 'prediction_result_folder': prediction_result_folder,
+                            'model_path': model_save_path, 'model_graph_save_path': model_graph_save_path,
+                            'data_fraction': data_fraction}
     return experiment_configure
 
 
 def length_test(test_model, event_list):
     for i in range(9, 2, -1):
-        performance_test(data_length=i, test_model=test_model, event_list=event_list)
+        performance_test(data_length=i, test_model=test_model, event_list=event_list, test_case='length_test')
 
 
-def performance_test(data_length, test_model, event_list=None):
+def data_fraction_test(test_model, event_list):
+    for item in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+        performance_test(data_length=10, test_model=test_model, event_list=event_list, test_case='data_fraction_test',
+                         data_fraction=item)
+
+
+def performance_test(data_length, test_model, test_case, event_list=None, data_fraction=1.0):
     time_window_list = ['一年', '三月']
     for cell_type in ['gru']:
         for item in time_window_list:
@@ -576,21 +585,22 @@ def performance_test(data_length, test_model, event_list=None):
             config = set_hyperparameter(time_window=item, batch_size=batch_size, event_list=event_list,
                                         max_sequence_length=max_sequence_length, learning_rate=learning_rate,
                                         num_hidden=num_hidden, keep_rate_input=keep_rate_input,
-                                        keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
+                                        keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight,
+                                        data_fraction=data_fraction, test_case=test_case)
 
             # config = set_hyperparameter(full_event_test=True, time_window=item)
             if test_model == 0:
-                model = 'hawkes_rnn_autoencoder_true'
+                model = 'fused_hawkes_rnn_autoencoder_true'
                 new_graph = tf.Graph()
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
-                        hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+                        fused_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
             elif test_model == 1:
                 new_graph = tf.Graph()
-                model = 'hawkes_rnn_autoencoder_false'
+                model = 'fused_hawkes_rnn_autoencoder_false'
                 with new_graph.as_default():
                     with tf.device('/device:GPU:0'):
-                        hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
+                        fused_hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
             elif test_model == 2:
                 new_graph = tf.Graph()
                 model = 'vanilla_rnn_autoencoder_true'
@@ -629,6 +639,7 @@ def generate_hidden_state_for_tsne():
     cell_type = 'gru'
     time_window = '一年'
     event_list = ['再血管化手术']
+    test_case = 'generate_tsne'
     learning_rate = 0.01
     num_hidden = 64
     batch_size = 128
@@ -639,13 +650,13 @@ def generate_hidden_state_for_tsne():
 
     config = set_hyperparameter(time_window=time_window, batch_size=batch_size, event_list=event_list,
                                 max_sequence_length=max_sequence_length, learning_rate=learning_rate,
-                                num_hidden=num_hidden, keep_rate_input=keep_rate_input,
+                                num_hidden=num_hidden, keep_rate_input=keep_rate_input, test_case=test_case,
                                 keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
     config['tsne_save_path'] = save_path
 
-    vanilla_rnn_test(config, cell_type, autoencoder, 'vanilla_rnn', test_case=1)
-    # hawkes_rnn_test(config, cell_type, autoencoder, 'fused_hawkes_rnn', test_case=1)
-    # concat_hawkes_rnn_test(config, cell_type, autoencoder, 'concat_hawkes_rnn', test_case=1)
+    vanilla_rnn_test(config, cell_type, autoencoder, 'vanilla_rnn', test_model=1)
+    # hawkes_rnn_test(config, cell_type, autoencoder, 'fused_hawkes_rnn', test_model=1)
+    # concat_hawkes_rnn_test(config, cell_type, autoencoder, 'concat_hawkes_rnn', test_model=1)
     return 0
 
 
@@ -690,7 +701,6 @@ def generate_hidden_state(experiment_config, node_list, model_type, model_name, 
         os.makedirs(save_path)
     np.save(os.path.join(save_path, 'hidden_state_{}_{}'.format(model_name, task_name)), final_state)
     np.save(os.path.join(save_path, 'label_{}_{}'.format(model_name, task_name)), label)
-    return 0
 
 
 def hyperparameter_search(event_list, time_window):
@@ -709,11 +719,12 @@ def hyperparameter_search(event_list, time_window):
         config = set_hyperparameter(time_window=time_window, batch_size=batch_size, event_list=event_list,
                                     max_sequence_length=max_sequence_length, learning_rate=learning_rate,
                                     num_hidden=num_hidden, keep_rate_input=keep_rate_input,
-                                    keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
-        model = 'hyperparameter_search_hawkes_rnn_autoencoder_true'
+                                    keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight,
+                                    test_case='hyperparameter_search')
+        model = 'fused_hawkes_rnn_autoencoder_true'
         new_graph = tf.Graph()
         with new_graph.as_default():
-            mean_auc = hawkes_rnn_test(config, cell_type='gru', autoencoder=autoencoder, model=model)
+            mean_auc = fused_hawkes_rnn_test(config, cell_type='gru', autoencoder=autoencoder, model=model)
         return [[mean_auc]]
 
     max_sequence_length = 10
@@ -735,6 +746,7 @@ def cell_search(cell_type):
     # 以随机搜索方式，用fuse hawkes rnn在3次入院长度，一年心功能2期这个任务让运行10次
     # 每次进行超参数设计后都让LSTM和GRU各跑一次，综合比较，选择模型
     time_window_list = ['三月', '一年']
+    test_case = 'cell_search'
     for item in time_window_list:
         if item == '一年':
             max_sequence_length = 10
@@ -757,24 +769,25 @@ def cell_search(cell_type):
         else:
             raise ValueError('')
 
-        config = set_hyperparameter(time_window=item, batch_size=batch_size,
+        config = set_hyperparameter(time_window=item, batch_size=batch_size, test_case=test_case,
                                     max_sequence_length=max_sequence_length, learning_rate=learning_rate,
                                     num_hidden=num_hidden, keep_rate_input=keep_rate_input,
                                     keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
         new_graph = tf.Graph()
         with new_graph.as_default():
-            model = 'cell_search_fused_hawkes_rnn'
-            hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+            model = 'fused_hawkes_rnn'
+            fused_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
         new_graph = tf.Graph()
         with new_graph.as_default():
-            model = 'cell_search_concat_hawkes_rnn'
+            model = 'concat_hawkes_rnn'
             concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
 
 
 if __name__ == '__main__':
     # cell_search('lstm')
     # hyperparameter_search(event_list=['心功能2级'], time_window='三月')
-    performance_test(data_length=10, test_model=5, event_list=None)
+    # performance_test(data_length=10, test_model=5, event_list=None, test_case='performance_test')
     # length_test(test_model=5, event_list=None)
-    generate_hidden_state_for_tsne()
+    # generate_hidden_state_for_tsne()
+    data_fraction_test(test_model=5, event_list=None)
     print('complete')

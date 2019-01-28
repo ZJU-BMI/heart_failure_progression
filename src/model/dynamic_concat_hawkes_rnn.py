@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from rnn_cell import GRUCell, LSTMCell, RawCell
 import autoencoder
-from dynamic_hawkes_rnn import _hawkes_dynamic_rnn
+from dynamic_fused_hawkes_rnn import _hawkes_dynamic_rnn
 
 
 def concat_hawkes_model(cell_context, cell_event, num_steps, num_hidden, num_context, num_event, keep_rate_input,
