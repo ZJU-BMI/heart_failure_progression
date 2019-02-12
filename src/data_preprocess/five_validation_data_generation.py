@@ -27,18 +27,19 @@ def data_filter(feature_data, label_data, max_data_length):
 
         # 最后一次输入其实是作为标签用的，其特征事实上不发挥作用，因此有效长度是总长度-1
         valid_length = len(medium_data_dict[patient_id])-1
-
-        # 如果有效长度超过了最大长度，则截断，反之补零
+        real_length = len(medium_data_dict[patient_id])
+        # 如果有效长度超过了最大长度
         if valid_length > max_data_length:
             valid_length = max_data_length
+
         for i in range(max_data_length):
             if i < valid_length:
-                feature.append(medium_data_dict[patient_id][i][0])
+                feature.append(medium_data_dict[patient_id][real_length-valid_length-1+i][0])
             else:
                 feature.append(['0' for _ in range(feature_num)])
 
         # 最后一次有效输入所对应的标签事实上是真实标签,
-        label = medium_data_dict[patient_id][valid_length-1][1]
+        label = medium_data_dict[patient_id][real_length-2][1]
         feature = np.array(feature, dtype=np.int16)
         data_dict[patient_id] = [feature, label, valid_length]
 
@@ -126,12 +127,12 @@ def main(data_length):
     """
     设定Data Length为n
     则病人至少要有n+1次的有效住院记录，其中
-    1. 预处理后的长期纵向数据_特征 中取n个数据
-    2. 预处理后的长期纵向数据_标签 中取第n个数据作为标签（这个标签事实上是第n+1次入院的信息赋予的）
+    1. 预处理后的长期纵向数据_特征 中，倒数取n个数据
+    2. 预处理后的长期纵向数据_标签 中，取最后一个数据作为标签（这个标签事实上是第n+1次入院的信息赋予的）
 
-    当病人的入院次数大于n+1时，数据在n处截断
+    当病人的入院次数大于n+1时，数据在倒数n处截断
     当病人的入院次数小于n+1，比如病人的总入院次数是n-2
-    则，取病人的前n-3次入院数据作为feature，剩余部分补零。第n-3次入院对应的label为标签
+    则，取病人的n-3次入院数据作为feature，剩余部分补零。第n-3次入院对应的label为标签
     :return:
     """
     feature_path = os.path.abspath('../../resource/预处理后的长期纵向数据_特征.csv')
@@ -178,6 +179,6 @@ def main(data_length):
 
 
 if __name__ == '__main__':
-    for i in range(3, 10):
-        main(i)
+    for length in range(3, 10):
+        main(length)
 

@@ -44,7 +44,7 @@ for key in pr_result:
             recall = tp / (tp + fn)
         pr_result[key][i] = {'precision': precision, 'recall': recall}
 
-save_path = os.path.abspath('..\\,,\\..\\..\\..\\resource\\prediction_result\\traditional_ml\\传统模型预测pr.csv')
+save_path = os.path.abspath('../,,/../../../resource/prediction_result/traditional_ml/传统模型预测pr.csv')
 data_to_write = [['key', 'threshold', 'precision', 'recall']]
 for key in pr_result:
     for threshold in pr_result[key]:

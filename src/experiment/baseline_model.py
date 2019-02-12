@@ -9,6 +9,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import metrics
+import math
 
 
 def read_data(feature_path, label_path):
@@ -82,19 +83,28 @@ def read_data(feature_path, label_path):
     return output_dict
 
 
-def reconstruct_data(output_dict):
+def reconstruct_data(output_dict, length=None):
+    # length指有效序列长度（除去最后一次入院）
     # 找到最后一个有效数据，再往前数一个，即为所需数据
+    # 如果length参数不为None，则如果length大于真实数据长度，则返回最后一个，反之返回length
     last_visit_dict = dict()
     for patient_id in output_dict:
         last_visit = 0
         for i in range(100):
             if i >= len(output_dict[patient_id]):
-                continue
+                break
             feature = np.array(output_dict[patient_id][i][0])
+            # 如果不是填零得到的数据集，必然有至少一个feature不为0
             feature_sum = feature.sum()
             if feature_sum > 0:
                 last_visit = i
-        last_visit_dict[patient_id] = last_visit-1
+
+        if length is None:
+            last_visit_dict[patient_id] = last_visit-1
+        elif length > last_visit:
+            last_visit_dict[patient_id] = last_visit-1
+        else:
+            last_visit_dict[patient_id] = length-1
 
     # 返回可以直接用于5折交叉验证的数据集
     data_list = list()
@@ -139,7 +149,7 @@ def svm(train_feature, train_label, test_feature, test_label):
 
 
 def lr(train_feature, train_label, test_feature, test_label):
-    clf = LogisticRegression(random_state=0, solver='lbfgs')
+    clf = LogisticRegression(random_state=0, solver='lbfgs', max_iter=2000)
     clf.fit(train_feature, train_label)
     pred_prob = clf.predict_proba(test_feature)[:, 1]
     pred_label = clf.predict(test_feature)
@@ -205,13 +215,13 @@ def mlp(train_feature, train_label, test_feature, test_label):
     return auc, acc, pre, recall, f1, pred_prob
 
 
-def main():
+def main(length, fraction):
     label_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_标签.csv')
     feature_path = os.path.abspath('..\\..\\resource\\预处理后的长期纵向数据_特征.csv')
     output_dict = read_data(feature_path, label_path)
-    time_window = ['一年', '三月',]
+    time_window = ['一年', '三月']
     event_order = ['其它', '心功能2级', '心功能1级', '心功能3级', '心功能4级', '再血管化手术',
-                   '死亡', '肺病', '肾病入院', '癌症', '糖尿病', ]
+                   '死亡', '肺病', '肾病入院', '癌症']
     valid_event_set = set()
     for item_1 in time_window:
         for item_2 in event_order:
@@ -223,7 +233,7 @@ def main():
     result_list.append(['CV_Repeat', 'Test_Fold', 'Method', 'Event', 'AUC', 'ACC', 'PRECISION', 'RECALL', 'F1'])
     for repeat in range(0, 10):
         prediction_label_dict[repeat] = dict()
-        data_in_five_split = reconstruct_data(output_dict)
+        data_in_five_split = reconstruct_data(output_dict, length)
         for i in range(0, 5):
             prediction_label_dict[repeat][i] = dict()
             # 构建五折交叉数据集
@@ -246,8 +256,18 @@ def main():
                         test_feature.append(data_tuple[0])
                         for key in data_tuple[1]:
                             test_label_dict[key].append(float(data_tuple[1][key]))
+            # fraction
+            train_feature = train_feature[0: math.floor(len(train_feature)*fraction)]
+            for key in train_label_dict:
+                label = np.array(train_label_dict[key][0: math.floor(len(train_label_dict[key])*fraction)])
+                # 如果所有样本都是负的，则把第一个置正
+                # 这种做法当然有一些问题，但是过小数据集下造成的这种性能偏倚并不会造成比较大的负面影响
+                # 就不做更为复杂但是正确的数据替换了
+                if label.sum() == 0:
+                    label[0] = 1
+                train_label_dict[key] = label
 
-            # 训练
+                # 训练
             for key in train_label_dict:
                 if not valid_event_set.__contains__(key):
                     continue
@@ -258,7 +278,7 @@ def main():
                 label_pred = np.concatenate([np.array(test_label_dict[key])[:, np.newaxis], pred_prob[:, np.newaxis]],
                                             axis=1)
                 prediction_label_dict[repeat][i][key]['lr'] = label_pred
-
+                """
                 svm_result = svm(train_feature, train_label_dict[key], test_feature, test_label_dict[key],)
                 auc, acc, pre, recall, f1, pred_score = svm_result
                 result_list.append([repeat, i, 'svm', key, auc, acc, pre, recall, f1])
@@ -279,8 +299,10 @@ def main():
                 label_pred = np.concatenate([np.array(test_label_dict[key])[:, np.newaxis], pred_prob[:, np.newaxis]],
                                             axis=1)
                 prediction_label_dict[repeat][i][key]['rf'] = label_pred
+                """
 
-    write_path = os.path.abspath('..\\..\\resource\\prediction_result\\traditional_ml\\传统模型预测综合.csv')
+    write_folder = os.path.abspath('../../resource/prediction_result/traditional_ml/')
+    write_path = os.path.join(write_folder, '传统模型预测综合_fraction_{}_length_{}_.csv'.format(fraction, length))
     with open(write_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(result_list)
 
@@ -294,11 +316,17 @@ def main():
                         label, prediction = prediction_label_dict[repeat][i][task][model][no]
                         row = [repeat, i, task, model, no, label, prediction]
                         data_to_write.append(row)
-    write_path = os.path.abspath('..\\..\\resource\\prediction_result\\traditional_ml\\传统模型预测细节.csv')
+    write_path = os.path.join(write_folder, '传统模型预测细节_fraction_{}_length_{}_.csv'.format(fraction, length))
     with open(write_path, 'w', encoding='gbk', newline='') as file:
         csv.writer(file).writerows(data_to_write)
     print('finish')
 
 
 if __name__ == "__main__":
-    main()
+    for fraction in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+        main(length=None, fraction=fraction)
+    """
+    main(length=None, fraction=1)
+    for length in [3, 4, 5, 6, 7, 8, 9, 10]:
+        main(length=length, fraction=1)
+    """

@@ -548,8 +548,8 @@ def set_hyperparameter(time_window, test_case, data_fraction=1.0, max_sequence_l
     return experiment_configure
 
 
-def length_test(test_model, event_list):
-    for i in range(9, 2, -1):
+def length_test(test_model, event_list, length_list):
+    for i in length_list:
         performance_test(data_length=i, test_model=test_model, event_list=event_list, test_case='length_test')
 
 
@@ -788,7 +788,7 @@ if __name__ == '__main__':
     # cell_search('lstm')
     # hyperparameter_search(event_list=['心功能2级'], time_window='三月')
     # performance_test(data_length=10, test_model=5, event_list=None, test_case='performance_test')
-    # length_test(test_model=5, event_list=None)
+    length_test(test_model=0, event_list=None, length_list=[3, 5, 7, 9])
     # generate_hidden_state_for_tsne()
-    data_fraction_test(test_model=5, event_list=None)
+    # data_fraction_test(test_model=5, event_list=None)
     print('complete')
