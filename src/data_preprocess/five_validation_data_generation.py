@@ -179,6 +179,6 @@ def main(data_length):
 
 
 if __name__ == '__main__':
-    for length in range(3, 10):
+    for length in range(1, 10):
         main(length)
 

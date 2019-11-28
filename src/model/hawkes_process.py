@@ -2,6 +2,7 @@
 import datetime
 import math
 import numpy as np
+from math import exp
 
 
 class Hawkes(object):
@@ -10,7 +11,7 @@ class Hawkes(object):
     some code, vectorization and adding cache
     """
 
-    def __init__(self, training_data, test_data, kernel, init_strategy, event_count, time_slot=100, omega=1,
+    def __init__(self, training_data, test_data, kernel, init_strategy, event_count, omega=1,
                  init_time=100, max_day=10000):
         """
         Construct a new Hawkes Model
@@ -34,7 +35,6 @@ class Hawkes(object):
         :param omega: if kernel is exp, we can set omega by dictionary, e.g. {'omega': 2}, the 'default'
         means omega will be set as 1 automatically
         automatically after initialization procedure accomplished
-        :param time_slot: time slot count
         :param init_time: the time of first event
         """
         self.training_data = training_data
@@ -42,7 +42,6 @@ class Hawkes(object):
         self.excite_kernel = kernel
         self.event_count = event_count
         self.init_strategy = init_strategy
-        self.time_slot = time_slot
         self.omega = omega
         self.train_log_likelihood_tendency = []
         self.test_log_likelihood_tendency = []
@@ -58,12 +57,6 @@ class Hawkes(object):
         self.alpha_nominator_matrix = None
         self.discrete_time_decay = None
         self.discrete_time_integral = None
-        if self.excite_kernel == 'fourier' or self.excite_kernel == 'Fourier':
-            self.count_of_each_slot = self.event_count_of_each_slot_function()
-            self.count_of_each_event = self.event_count_of_each_event_function()
-            self.y_omega = self.y_omega_calculate()
-            self.k_omega_cache = self.k_omega_cache_calculate()
-            self.k_omega = self.k_omega_update()
         print("Hawkes Process Model Initialize Accomplished")
 
     def initialize_base_intensity(self):
@@ -120,69 +113,6 @@ class Hawkes(object):
                 event_index = event[0]
                 count_vector[event_index][0] += 1
         return count_vector
-
-    def event_count_of_each_slot_function(self):
-        event_list_full = []
-        for j in self.training_data:
-            event_list = self.training_data[j]
-            for event in event_list:
-                event_list_full.append(event)
-        event_list_full = sorted(event_list_full, key=lambda event_time: event_time[1])
-        # time unit is a float number
-        time_unit = (event_list_full[-1][1] - event_list_full[0][1]) / self.time_slot
-
-        count_list = np.zeros([self.time_slot, 1])
-        for item in event_list_full:
-            slot_index = int((item[1] - self.initial_time) / time_unit)
-            if slot_index == len(count_list):
-                count_list[slot_index - 1] += 1
-            else:
-                count_list[slot_index] += 1
-        return count_list
-
-    # update y, k_omega
-    def k_omega_cache_calculate(self):
-        cache = np.zeros([self.event_count, self.time_slot], dtype=np.complex64)
-        omega = np.arange(0, 2 * np.pi, 2 * np.pi / self.time_slot)
-        for j in self.training_data:
-            for item in self.training_data[j]:
-                event_index = item[0]
-                event_time = item[1]
-                cache[event_index] += np.exp(-1 * complex(0, 1) * omega * event_time)
-        return cache
-
-    def k_omega_update(self):
-        # calculate denominator
-        k_denominator = np.zeros([self.time_slot, 1], dtype=np.complex64)
-        for k in range(0, self.time_slot):
-            if k == 0:
-                mutual_in = self.mutual_intensity
-                count_event = self.count_of_each_event
-                denominator = np.matmul(mutual_in, count_event).sum()
-                k_denominator[k][0] = denominator
-            else:
-                cache = self.k_omega_cache[:, k]
-                mutual = self.mutual_intensity
-                k_denominator[k][0] = np.dot(cache, mutual).sum()
-        k_nominator = np.zeros([self.time_slot, 1], dtype=np.complex64)
-        for k in range(0, self.time_slot):
-            if k == 0:
-                k_nominator[k][0] = self.y_omega[k][0] - np.pi * 2 * self.base_intensity.sum()
-            else:
-                k_nominator[k][0] = self.y_omega[k][0]
-
-        self.k_omega = k_nominator / k_denominator
-        return k_nominator / k_denominator
-
-    def y_omega_calculate(self):
-        y_omega = np.zeros([self.time_slot, 1], dtype=np.complex128)
-        for k in range(0, self.time_slot):
-            omega_k = 2 * math.pi / self.time_slot * k
-            y_omega_k = 0
-            for i in range(0, self.time_slot):
-                y_omega_k += np.exp(-1 * omega_k * i * complex(0, 1)) * self.count_of_each_slot[i]
-            y_omega[k][0] = y_omega_k
-        return y_omega
 
     # EM Algorithm
     def maximization_step(self):
@@ -312,11 +242,6 @@ class Hawkes(object):
             omega = self.omega
             kernel_value = np.exp(-1 * omega * (late_event_time - early_event_time))
             return kernel_value
-        elif kernel_type == 'fourier' or kernel_type == 'Fourier':
-            exp = np.exp(complex(0, 1) * (late_event_time - early_event_time) * np.arange(0, 2 * np.pi,
-                                                                                          2 * np.pi / self.time_slot))
-            kappa = (exp * self.k_omega).sum()
-            return abs(kappa)
         else:
             raise RuntimeError('illegal kernel name')
 
@@ -331,19 +256,6 @@ class Hawkes(object):
             omega = self.omega
             kernel_integral = (np.exp(-1 * omega * lower_bound) - math.exp(-1 * omega * upper_bound)) / omega
             return kernel_integral
-        elif kernel_type == 'fourier' or kernel_type == 'Fourier':
-            # the calculate equations are different when k=0
-
-            # for k>0
-            omega = np.arange(2 * np.pi / self.time_slot, 2 * np.pi, 2 * np.pi / self.time_slot)
-            first = self.k_omega[1:, ]
-            middle = complex(0, 1) / omega
-            last = 1 - np.exp(complex(0, 1) * omega * (upper_bound - lower_bound))
-            kernel_integral = (first * middle * last).sum()
-
-            # for k=0
-            kernel_integral += self.k_omega[0][0] * (upper_bound - lower_bound)
-            return abs(kernel_integral / self.time_slot)
         else:
             raise RuntimeError('illegal kernel name')
 
@@ -370,8 +282,6 @@ class Hawkes(object):
 
         for i in range(1, iteration + 1):
             # EM Algorithm
-            if self.excite_kernel == 'fourier' or self.excite_kernel == 'Fourier':
-                self.k_omega_update()
             update_time_decay_start = datetime.datetime.now()
             self.update_discrete_time_decay_function()
             self.update_discrete_integral_function()
@@ -490,6 +400,49 @@ class Hawkes(object):
             discrete_integral_function.append(integral)
         discrete_integral_function = np.array(discrete_integral_function)
         self.discrete_time_integral = discrete_integral_function
+
+
+class HawkesPrediction(object):
+    def __init__(self, history_data, mutual_intensity, base_intensity):
+        """
+        :param history_data:
+                Data Structure:
+        {id_index: [(event_index, event_time), (event_index, event_time),...]}
+        brace means a dictionary, square brackets means lists, brackets means tuples.
+        Other notations follow the convention of document.
+
+        event_index: integer, from 1 to n_j, n_j is the length of a sample sequence, smaller the index, earlier the
+        event time of a event. Several events can happen simultaneously, thus the event time of two adjacent events
+        can be same
+        event_time: integer. Define the time of event happens. The time of first event of each sample is assigned as
+        100 (day). Other event time is the time interval between current event and first event plus 100.
+        event_id: string, each id indicates a independent sample sequence
+        :param mutual_intensity:  the index of intensity matrix/vector should match the settings of data
+        :param base_intensity:
+        """
+        self.history_data = history_data
+        self.mutual_intensity = mutual_intensity
+        self.base_intensity = base_intensity
+        print('load success')
+
+    def predict_event_probability_exp(self, omega, event_index, time_window):
+        # 参考Lecture Notes, Temporal Pint Process and the Conditional Intensity Function arXiv 1806.00221
+        prediction_list = list()
+        for patient in self.history_data:
+            event_list = self.history_data[patient]
+            intensity = self.base_intensity[event_index][0]*time_window
+            last_time = event_list[-1][1]
+            for item in event_list:
+                index, time = item
+                mutual_intensity = self.mutual_intensity[event_index][index]
+                intensity_ = -1/omega*mutual_intensity*(
+                    exp((last_time + time_window - time) * -omega)-
+                    exp((last_time-time)*-omega)
+                )
+                intensity += intensity_
+            probability = 1 - exp(-intensity)
+            prediction_list.append(probability)
+        return prediction_list
 
 
 def unit_test():

@@ -40,6 +40,9 @@ def read_rnn_result(folder_path, event_list, skip_line=24, length=None, fraction
     prediction = list()
     label = list()
     for target in result_dict:
+        # 如果某个label全为0，则直接跳过这个任务
+        if np.array(result_dict[target]['label']).sum() == 0:
+            continue
         prediction.append(result_dict[target]['prediction'])
         label.append(result_dict[target]['label'])
     prediction = np.transpose(np.array(prediction))
@@ -49,7 +52,7 @@ def read_rnn_result(folder_path, event_list, skip_line=24, length=None, fraction
 
 def read_various_length(model, folder_path, event_list):
     length = str(model.split('_')[-1])
-    skip_line = 24
+    skip_line = 25
     return read_rnn_result(folder_path, event_list, skip_line=skip_line, length=length, fraction=None)
 
 
@@ -90,7 +93,8 @@ def read_base_data(event_list, file_path):
 def get_auc(path_dict, model):
     time_window = ['一年', '三月']
     event_type = ['癌症', '肾病入院', '死亡', '心功能1级', '心功能2级', '心功能3级',
-                  '心功能4级', '再血管化手术', '其它']
+                  '心功能4级', '再血管化手术']
+    # ,'其它']
     auc_dict = dict()
     for item_1 in time_window:
         event_list = list()
@@ -128,20 +132,20 @@ def path_set(root_folder):
     path_dict['lstm_rnn'] = os.path.join(root_folder, 'cell_search_vanilla_rnn_lstm')
 
     path_dict['dae_rnn'] = os.path.join(root_folder, 'vanilla_rnn_autoencoder_false_gru')
-    path_dict['dae_fused_hawkes'] = os.path.join(root_folder, 'fused_hawkes_rnn_autoencoder_false_gru')
-    path_dict['dae_concat_hawkes'] = os.path.join(root_folder, 'concat_hawkes_rnn_autoencoder_false_gru')
+    path_dict['no_dae_fused_hawkes'] = os.path.join(root_folder, 'fused_hawkes_rnn_autoencoder_false_gru')
+    path_dict['no_dae_concat_hawkes'] = os.path.join(root_folder, 'concat_hawkes_rnn_autoencoder_false_gru')
 
     for i in range(3, 10):
         path_dict['lr_length_{}'.format(i)] = \
             os.path.join(root_folder, 'traditional_ml/传统模型预测细节_fraction_{}_length_{}_.csv'.format(1, i))
 
-    for i in range(3, 10):
+    for i in range(1, 10):
         path_dict['concat_hawkes_visit_{}'.format(i)] = \
-            os.path.join(root_folder, 'concat_hawkes_rnn_autoencoder_true_gru')
+            os.path.join(root_folder, 'length_test_concat_hawkes_rnn_autoencoder_true_gru')
         path_dict['fused_hawkes_visit_{}'.format(i)] = \
-            os.path.join(root_folder, 'fused_hawkes_rnn_autoencoder_true_gru')
+            os.path.join(root_folder, 'length_test_fused_hawkes_rnn_autoencoder_true_gru')
         path_dict['rnn_visit_{}'.format(i)] = \
-            os.path.join(root_folder, 'vanilla_rnn_autoencoder_true_gru')
+            os.path.join(root_folder, 'length_test_vanilla_rnn_autoencoder_true_gru')
 
     for i in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
         path_dict['concat_hawkes_fraction_{}'.format(i)] = \

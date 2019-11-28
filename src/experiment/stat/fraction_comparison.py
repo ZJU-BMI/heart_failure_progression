@@ -74,13 +74,13 @@ axs[1].set_xlabel('Data Fraction', fontsize=12, fontweight='bold')
 axs[0].set_ylabel('AUC', fontsize=12, fontweight='bold')
 
 legend = fig.legend([l1, l2, l3, l4, l5, l6, l7, l8],
-                    labels=['Micro-AUC-LR', 'Micro-AUC-RNN', 'Micro-AUC-CH-RNN', 'Micro-AUC-CH-RNN',
-                            'Macro-AUC-LR', 'Macro-AUC-RNN', 'Macro-AUC-FH-RNN', 'Macro-AUC-CH-RNN'],
+                    labels=['Micro-AUC-LR', 'Micro-AUC-GRU', 'Micro-AUC-FH-RNN', 'Micro-AUC-CH-RNN',
+                            'Macro-AUC-LR', 'Macro-AUC-GRU', 'Macro-AUC-FH-RNN', 'Macro-AUC-CH-RNN'],
                     borderaxespad=0,
-                    ncol=1,
+                    ncol=4,
                     fontsize=10,
-                    loc='right',
-                    bbox_to_anchor=[1.17, 0.5],
+                    loc='center',
+                    bbox_to_anchor=[0.54, 1.05],
                     )
 
 plt.show()

@@ -417,15 +417,15 @@ def unit_test():
                          name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state = \
-            hawkes_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                             phase_indicator, autoencoder_length)
+            fused_hawkes_rnn_model(a_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                                   phase_indicator, autoencoder_length)
     elif test_cell_type == 1:
         b_cell = RawCell(num_hidden=num_hidden, weight_initializer=initializer_o, bias_initializer=initializer_z,
                          keep_prob=keep_prob, input_length=input_length, phase_indicator=phase_indicator, name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state = \
-            hawkes_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                             phase_indicator, autoencoder_length)
+            fused_hawkes_rnn_model(b_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                                   phase_indicator, autoencoder_length)
 
     elif test_cell_type == 2:
         c_cell = LSTMCell(num_hidden=num_hidden, input_length=input_length, weight_initializer=initializer_o,
@@ -433,8 +433,8 @@ def unit_test():
                           name='')
         loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
             base_intensity, mutual_intensity, time_list, task_index, sequence_length, final_state = \
-            hawkes_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
-                             phase_indicator, autoencoder_length)
+            fused_hawkes_rnn_model(c_cell, num_steps, num_hidden, num_context, num_event, keep_rate_input, dae_weight,
+                                   phase_indicator, autoencoder_length)
     else:
         raise ValueError('')
 

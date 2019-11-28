@@ -11,16 +11,13 @@ def main():
     # 建立数据模板
     model_type_list = ['concat_hawkes_rnn_autoencoder_true_gru',
                        'concat_hawkes_rnn_autoencoder_false_gru',
-                       'hawkes_rnn_autoencoder_true_gru',
-                       'hawkes_rnn_autoencoder_false_gru',
+                       'fused_hawkes_rnn_autoencoder_true_gru',
+                       'fused_hawkes_rnn_autoencoder_false_gru',
                        'vanilla_rnn_autoencoder_true_gru',
                        'vanilla_rnn_autoencoder_false_gru',
-                       # 'cell_search_concat_hawkes_rnn_gru',
-                       # 'cell_search_concat_hawkes_rnn_lstm',
-                       # 'cell_search_fused_hawkes_rnn_gru',
-                       # 'cell_search_fused_hawkes_rnn_lstm',
-                       # 'cell_search_vanilla_rnn_gru',
-                       # 'cell_search_vanilla_rnn_lstm'
+                       'length_test_vanilla_rnn_autoencoder_true_gru',
+                       'length_test_fused_hawkes_rnn_autoencoder_true_gru',
+                       'length_test_concat_hawkes_rnn_autoencoder_true_gru'
                        ]
     time_window = ['三月', '一年']
     event_order = ['心功能1级', '心功能2级', '心功能3级', '心功能4级', '再血管化手术',
@@ -53,8 +50,18 @@ def main():
             auc_list = np.zeros(50)
             with open(file_path, 'r', encoding='gbk', newline='') as file:
                 csv_reader = csv.reader(file)
+                skip_line = 24
                 for i, line in enumerate(csv_reader):
-                    if i < 24 or i >= 74:
+                    if i < 24:
+                        continue
+                    elif i == 24:
+                        if line[3] == 'auc':
+                            skip_line = 25
+                    else:
+                        break
+
+                for i, line in enumerate(csv_reader):
+                    if i < skip_line or i >= skip_line+50:
                         continue
                     auc_list[i-24] = float(line[3])
                 mean = np.mean(auc_list)

@@ -1,15 +1,11 @@
-import GPyOpt
 import tensorflow as tf
 from sklearn import metrics
 import numpy as np
 from read_data import DataSource
 from dynamic_fused_hawkes_rnn import fused_hawkes_rnn_model
-from dynamic_vanilla_rnn import vanilla_rnn_model
 from dynamic_concat_hawkes_rnn import concat_hawkes_model
 from rnn_cell import RawCell, LSTMCell, GRUCell
 import os
-import csv
-import datetime
 
 
 def get_metrics(prediction, label, threshold=0.2):
@@ -30,63 +26,7 @@ def get_metrics(prediction, label, threshold=0.2):
     return accuracy, precision, recall, f1, auc
 
 
-def vanilla_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_model=0):
-    max_length = shared_hyperparameter['max_sequence_length']
-    learning_rate = shared_hyperparameter['learning_rate']
-    keep_rate_input = shared_hyperparameter['keep_rate_input']
-    keep_rate_hidden = shared_hyperparameter['keep_rate_input']
-    num_hidden = shared_hyperparameter['num_hidden']
-    context_num = shared_hyperparameter['context_num']
-    event_num = shared_hyperparameter['event_num']
-    dae_weight = shared_hyperparameter['dae_weight']
-    shared_hyperparameter['autoencoder'] = autoencoder
-    shared_hyperparameter['model'] = model
-    shared_hyperparameter['cell_type'] = cell_type
-
-    if autoencoder > 0:
-        input_length = autoencoder + event_num
-    else:
-        input_length = event_num + context_num
-
-    model = model + '_' + cell_type
-
-    g = tf.Graph()
-    with g.as_default():
-        with tf.name_scope('phase'):
-            phase_indicator = tf.placeholder(tf.int32, shape=[], name="phase_indicator")
-        if cell_type == 'gru':
-            cell = GRUCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                           num_hidden=num_hidden, name='gru')
-        elif cell_type == 'lstm':
-            cell = LSTMCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                            num_hidden=num_hidden, name='lstm')
-        elif cell_type == 'raw':
-            cell = RawCell(phase_indicator=phase_indicator, keep_prob=keep_rate_hidden, input_length=input_length,
-                           num_hidden=num_hidden, name='raw')
-        else:
-            raise ValueError('cell type invalid')
-
-        loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size, phase_indicator, \
-            sequence_length, final_state = vanilla_rnn_model(num_steps=max_length, num_hidden=num_hidden, cell=cell,
-                                                             keep_rate_input=keep_rate_input, dae_weight=dae_weight,
-                                                             phase_indicator=phase_indicator, num_context=context_num,
-                                                             embedded_size=autoencoder, num_event=event_num,)
-        train_node = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-
-        node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
-                     phase_indicator, sequence_length, final_state, train_node]
-        if test_model == 0:
-            mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='vanilla_rnn',
-                                                    model_name=model)
-        elif test_model == 1:
-            generate_hidden_state(shared_hyperparameter, node_list, model_type='vanilla_rnn', model_name=model)
-            mean_auc = 0
-        else:
-            raise ValueError('')
-    return mean_auc
-
-
-def fused_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_model=0):
+def fused_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, task):
     # test case = 0 五折交叉验证
     # test case = 1 tsne 用
     max_length = shared_hyperparameter['max_sequence_length']
@@ -132,16 +72,11 @@ def fused_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, 
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator,  base_intensity, mutual_intensity, time_list, task_index, sequence_length,
                      final_state, train_node]
-        if test_model == 0:
-            mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
-                                                    model_name=model)
-        elif test_model == 1:
-            generate_hidden_state(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
-            mean_auc = 0
-    return mean_auc
+
+        validation_test(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model, task=task)
 
 
-def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, test_model=0):
+def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model, task):
     max_length = shared_hyperparameter['max_sequence_length']
     learning_rate = shared_hyperparameter['learning_rate']
     keep_rate_input = shared_hyperparameter['keep_rate_input']
@@ -192,19 +127,12 @@ def concat_hawkes_rnn_test(shared_hyperparameter, cell_type, autoencoder, model,
         node_list = [loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,
                      phase_indicator, base_intensity, mutual_intensity, time_list, task_index, sequence_length,
                      concat_final_state, train_node]
-        if test_model == 0:
-            mean_auc = five_fold_validation_default(shared_hyperparameter, node_list, model_type='hawkes_rnn',
-                                                    model_name=model)
-        elif test_model == 1:
-            generate_hidden_state(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model)
-            mean_auc = 0
-        else:
-            raise ValueError('')
-        return mean_auc
+
+        validation_test(shared_hyperparameter, node_list, model_type='hawkes_rnn', model_name=model, task=task)
 
 
-def run_graph(data_source, max_step, node_list, validate_step_interval, task_name, experiment_config, model,
-              terminate_number=10):
+def run_and_save_graph(data_source, max_step, node_list, validate_step_interval, task_name, experiment_config, model_type,
+                       model_name, terminate_number=10):
 
     best_result = {'auc': 0, 'acc': 0, 'precision': 0, 'recall': 0, 'f1': 0, 'prediction_label': list()}
 
@@ -225,13 +153,19 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
     no_improve_count = 0
     minimum_loss = 10000
 
+    save_folder = os.path.join(experiment_config['prediction_result_folder'], model_name)
+    save_folder = os.path.join(save_folder, task_name)
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+    builder = save_model(sess, node_list, save_folder, model_version='1.14.0')
+
     for step in range(max_step):
         train_node = node_list[-1]
         loss = node_list[0]
         prediction = node_list[1]
         train_feed_dict, train_label = feed_dict_and_label(data_object=data_source, node_list=node_list,
                                                            base_intensity_value=base_intensity_value,
-                                                           task_index=task_index, phase=2, model=model,
+                                                           task_index=task_index, phase=2, model=model_type,
                                                            mutual_intensity_value=mutual_intensity_value,
                                                            task_name=task_name)
         sess.run(train_node, feed_dict=train_feed_dict)
@@ -240,11 +174,11 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
         if step % validate_step_interval == 0:
             validate_feed_dict, validate_label =\
                 feed_dict_and_label(data_object=data_source, node_list=node_list, task_index=task_index,
-                                    base_intensity_value=base_intensity_value, phase=3, model=model,
+                                    base_intensity_value=base_intensity_value, phase=3, model=model_type,
                                     mutual_intensity_value=mutual_intensity_value, task_name=task_name)
             test_feed_dict, test_label = \
                 feed_dict_and_label(data_object=data_source, node_list=node_list, task_index=task_index,
-                                    base_intensity_value=base_intensity_value, phase=1, model=model,
+                                    base_intensity_value=base_intensity_value, phase=1, model=model_type,
                                     mutual_intensity_value=mutual_intensity_value, task_name=task_name)
 
             train_loss, train_prediction = sess.run([loss, prediction], feed_dict=train_feed_dict)
@@ -284,11 +218,60 @@ def run_graph(data_source, max_step, node_list, validate_step_interval, task_nam
                 best_result['f1'] = f1
                 best_result['prediction_label'] = test_label_prediction
 
+                builder.save()
+
             if validate_label.sum() < 0.5:
                 break
 
     # 输出最优结果与当前模型（通过node_list输出）
     return best_result, node_list, sess
+
+
+def save_model(sess, node_list, export_path_base, model_version='1.14.0'):
+    # Export model
+    # WARNING(break-tutorial-inline-code): The following code snippet is
+    # in-lined in tutorials, please update tutorial documents accordingly
+    # whenever code changes.
+    export_path = os.path.join(
+        tf.compat.as_bytes(export_path_base),
+        tf.compat.as_bytes(str(model_version)))
+    print('Exporting trained model to', export_path)
+    builder = tf.saved_model.builder.SavedModelBuilder(export_path)
+
+    loss, prediction, event_placeholder, context_placeholder, y_placeholder, batch_size,\
+        phase_indicator, base_intensity, mutual_intensity, time_list, task_index, sequence_length,\
+            final_state, train_node = node_list
+    event_sig = tf.saved_model.utils.build_tensor_info(event_placeholder)
+    context_sig = tf.saved_model.utils.build_tensor_info(context_placeholder)
+    pred_sig = tf.saved_model.utils.build_tensor_info(prediction)
+    phase_sig = tf.saved_model.utils.build_tensor_info(phase_indicator)
+    base_intensity_sign = tf.saved_model.utils.build_tensor_info(base_intensity)
+    batch_size_sig = tf.saved_model.utils.build_tensor_info(batch_size)
+    mutual_intensity_sig = tf.saved_model.utils.build_tensor_info(mutual_intensity)
+    task_index_sig = tf.saved_model.utils.build_tensor_info(task_index)
+    time_list_sig = tf.saved_model.utils.build_tensor_info(time_list)
+    sequence_length_sig = tf.saved_model.utils.build_tensor_info(sequence_length)
+
+    prediction_signature = (
+        tf.saved_model.signature_def_utils.build_signature_def(
+            inputs={'event': event_sig, 'context': context_sig, 'base': base_intensity_sign, 'batch': batch_size_sig,
+                    'mutual': mutual_intensity_sig, 'phase': phase_sig, 'task': task_index_sig,
+                    'time_list': time_list_sig, 'sequence_length': sequence_length_sig},
+            outputs={'scores': pred_sig},
+            method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
+
+    builder.add_meta_graph_and_variables(
+        sess, [tf.saved_model.tag_constants.SERVING],
+        signature_def_map={
+            'predict':
+                prediction_signature,
+            tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+                prediction_signature,
+        },
+        main_op=tf.tables_initializer(),
+        strip_default_attrs=True)
+
+    return builder
 
 
 def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, model, mutual_intensity_value,
@@ -370,11 +353,10 @@ def feed_dict_and_label(data_object, node_list, task_name, task_index, phase, mo
         raise ValueError('invalid model name')
 
 
-def five_fold_validation_default(experiment_config, node_list, model_type, model_name):
+def validation_test(experiment_config, node_list, model_type, model_name, task):
     max_length = experiment_config['max_sequence_length']
     data_folder = experiment_config['data_folder']
     batch_size = experiment_config['batch_size']
-    event_list = experiment_config['event_list']
     max_iter = experiment_config['max_iter']
     validate_step_interval = experiment_config['validate_step_interval']
     data_fraction = experiment_config['data_fraction']
@@ -382,106 +364,16 @@ def five_fold_validation_default(experiment_config, node_list, model_type, model
 
     result_folder = os.path.join(experiment_config['prediction_result_folder'], test_case+'_'+model_name)
 
-    # 五折交叉验证，跑十次
-    best_auc = dict()
-    for task in event_list:
-        result_record = dict()
-        prediction_label_dict = dict()
-        for j in range(5):
-            if not result_record.__contains__(j):
-                result_record[j] = dict()
-                prediction_label_dict[j] = dict()
-            for i in range(10):
-                # 输出当前实验设置
-                print('{}_repeat_{}_fold_{}_task_{}_log'.format(model_name, i, j, task))
-                for key in experiment_config:
-                    print(key+': '+str(experiment_config[key]))
+    # 从洗过的数据中读取数据
+    data_source = DataSource(data_folder, data_length=max_length, validate_fold_num=0,
+                             batch_size=batch_size, repeat=0, read_fraction=data_fraction)
 
-                # 从洗过的数据中读取数据
-                data_source = DataSource(data_folder, data_length=max_length, validate_fold_num=j,
-                                         batch_size=batch_size, repeat=i, read_fraction=data_fraction)
+    best_result, _, sess = run_and_save_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
+                                              validate_step_interval=validate_step_interval, model_type=model_type,
+                                              model_name=model_name,
+                                              experiment_config=experiment_config, task_name=task)
+    sess.close()
 
-                best_result, _, sess = run_graph(data_source=data_source, max_step=max_iter,  node_list=node_list,
-                                                 validate_step_interval=validate_step_interval, model=model_type,
-                                                 experiment_config=experiment_config, task_name=task)
-                sess.close()
-                prediction_label = best_result.pop('prediction_label')
-                result_record[j][i] = best_result
-                prediction_label_dict[j][i] = prediction_label
-                print(task)
-                print(best_result)
-
-                # 实时输出当前平均性能
-                current_auc_mean = 0
-                count = 0
-                for q in result_record:
-                    for p in result_record[q]:
-                        current_auc_mean += result_record[q][p]['auc']
-                        count += 1
-                print('current auc mean = {}'.format(current_auc_mean/count))
-
-        auc_mean = 0
-        for q in result_record:
-            for p in result_record[q]:
-                auc_mean += result_record[q][p]['auc']
-        best_auc[task] = auc_mean/50
-        save_result(result_folder, experiment_config, result_record, prediction_label_dict, task)
-
-    # 最后返回综合AUC作为性能评价指标（其实不太合适，但是就这样吧）
-    mean_auc = 0
-    for key in best_auc:
-        mean_auc += best_auc[key]
-    mean_auc = mean_auc/len(best_auc)
-    return mean_auc
-
-
-def save_result(save_folder, experiment_config, result_record, prediction_label_dict, task_name):
-
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-    current_time = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-
-    # 存储性能
-    max_sequence_length = experiment_config['max_sequence_length']
-    data_fraction = experiment_config['data_fraction']
-
-    # 存储预测与标签
-    save_path = os.path.join(save_folder,
-                             'length_{}_prediction_label_{}_{}_data_fraction_{}.csv'.
-                             format(max_sequence_length, task_name, current_time, data_fraction))
-    data_to_write = [['label', 'prediction']]
-    for key in experiment_config:
-        data_to_write.append([key, experiment_config[key]])
-    for j in prediction_label_dict:
-        for i in prediction_label_dict[j]:
-            for k in range(len(prediction_label_dict[j][i])):
-                data_to_write.append(prediction_label_dict[j][i][k])
-    with open(save_path, 'w', encoding='gbk', newline='') as file:
-        csv.writer(file).writerows(data_to_write)
-
-    # 存储综合性能
-    save_path = os.path.join(save_folder, 'result_length_{}_{}_{}.csv'.format(max_sequence_length,
-                                                                              task_name, current_time))
-    data_to_write = []
-    for key in experiment_config:
-        data_to_write.append([key, experiment_config[key]])
-    head = ['task', 'test_fold', 'repeat', 'auc', 'acc', 'precision', 'recall', 'f1']
-    data_to_write.append(head)
-    for j in result_record:
-        for i in result_record[j]:
-            row = []
-            result = result_record[j][i]
-            row.append(task_name)
-            row.append(j)
-            row.append(i)
-            row.append(result['auc'])
-            row.append(result['acc'])
-            row.append(result['precision'])
-            row.append(result['recall'])
-            row.append(result['f1'])
-            data_to_write.append(row)
-    with open(save_path, 'w', encoding='gbk', newline='') as file:
-        csv.writer(file).writerows(data_to_write)
 
 
 def set_hyperparameter(time_window, test_case, data_fraction=1.0, max_sequence_length=10, batch_size=256,
@@ -589,205 +481,42 @@ def performance_test(data_length, test_model, test_case, event_list=None, data_f
                                         keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight,
                                         data_fraction=data_fraction, test_case=test_case)
 
-            # config = set_hyperparameter(full_event_test=True, time_window=item)
-            if test_model == 0:
-                model = 'fused_hawkes_rnn_autoencoder_true'
-                new_graph = tf.Graph()
-                with new_graph.as_default():
-                    with tf.device('/device:GPU:0'):
-                        fused_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
-            elif test_model == 1:
-                new_graph = tf.Graph()
-                model = 'fused_hawkes_rnn_autoencoder_false'
-                with new_graph.as_default():
-                    with tf.device('/device:GPU:0'):
-                        fused_hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model)
-            elif test_model == 2:
-                new_graph = tf.Graph()
-                model = 'vanilla_rnn_autoencoder_true'
-                with new_graph.as_default():
-                    with tf.device('/device:GPU:0'):
-                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
-            elif test_model == 3:
-                new_graph = tf.Graph()
-                model = 'vanilla_rnn_autoencoder_false'
-                with new_graph.as_default():
-                    with tf.device('/device:GPU:0'):
-                        vanilla_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
-            elif test_model == 4:
-                new_graph = tf.Graph()
-                model = 'concat_hawkes_rnn_autoencoder_true'
-                with new_graph.as_default():
-                    with tf.device('/device:GPU:0'):
-                        concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
-            elif test_model == 5:
-                new_graph = tf.Graph()
-                model = 'concat_hawkes_rnn_autoencoder_false'
-                with new_graph.as_default():
-                    with tf.device('/device:GPU:0'):
-                        concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model)
-            else:
-                raise ValueError('invalid test model')
-
-
-def generate_hidden_state_for_tsne():
-    # 为了展示最好的tsne效果，这里的所有参数全部是选过的，每个任务都不一样，参数分别为。每个测试集默认选择
-    # 0 fold 为验证集，然后再全数据上进行representation生成
-    # concat_hawkes_rnn_gru	cell_search_concat_hawkes_rnn_gru	三月再血管化手术20190123041603.csv
-
-    save_path = os.path.abspath('../../resource/prediction_result/tsne/')
-    max_sequence_length = 10
-    cell_type = 'gru'
-    time_window = '一年'
-    event_list = ['再血管化手术']
-    test_case = 'generate_tsne'
-    learning_rate = 0.01
-    num_hidden = 64
-    batch_size = 128
-    keep_rate_hidden = 1
-    keep_rate_input = 0.8
-    dae_weight = 0.8
-    autoencoder = 32
-
-    config = set_hyperparameter(time_window=time_window, batch_size=batch_size, event_list=event_list,
-                                max_sequence_length=max_sequence_length, learning_rate=learning_rate,
-                                num_hidden=num_hidden, keep_rate_input=keep_rate_input, test_case=test_case,
-                                keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
-    config['tsne_save_path'] = save_path
-
-    vanilla_rnn_test(config, cell_type, autoencoder, 'vanilla_rnn', test_model=1)
-    # hawkes_rnn_test(config, cell_type, autoencoder, 'fused_hawkes_rnn', test_model=1)
-    # concat_hawkes_rnn_test(config, cell_type, autoencoder, 'concat_hawkes_rnn', test_model=1)
-    return 0
-
-
-def generate_hidden_state(experiment_config, node_list, model_type, model_name, repeat=0, fold=0):
-    max_length = experiment_config['max_sequence_length']
-    data_folder = experiment_config['data_folder']
-    batch_size = experiment_config['batch_size']
-    event_list = experiment_config['event_list']
-    max_iter = experiment_config['max_iter']
-    validate_step_interval = experiment_config['validate_step_interval']
-    task_name = event_list[0]
-    save_path = experiment_config['tsne_save_path']
-
-    # 从洗过的数据中读取数据
-    data_source = DataSource(data_folder, data_length=max_length, validate_fold_num=fold,
-                             batch_size=batch_size, repeat=repeat)
-    # 训练模型
-    best_result, node_list, sess = run_graph(data_source=data_source, max_step=max_iter, node_list=node_list,
-                                             validate_step_interval=validate_step_interval, model=model_type,
-                                             experiment_config=experiment_config, task_name=task_name,
-                                             terminate_number=3)
-    best_result.pop('prediction_label')
-    print(model_name)
-    print(best_result)
-    # 生成结果
-    event_id_dict = experiment_config['event_id_dict']
-    task_index = event_id_dict[task_name[2:]]
-    mutual_intensity_path = experiment_config['mutual_intensity_path']
-    base_intensity_path = experiment_config['base_intensity_path']
-    mutual_intensity_value = np.load(mutual_intensity_path)
-    base_intensity_value = np.load(base_intensity_path)
-    feed_dict, label = feed_dict_and_label(data_object=data_source, node_list=node_list,
-                                           base_intensity_value=base_intensity_value, task_index=task_index,
-                                           phase=4, model=model_type, mutual_intensity_value=mutual_intensity_value,
-                                           task_name=task_name)
-
-    loss, final_state_node = node_list[-1], node_list[-2]
-    _, final_state = sess.run([loss, final_state_node], feed_dict=feed_dict)
-    label = data_source.get_all_data(task_name)[4]
-    sess.close()
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-    np.save(os.path.join(save_path, 'hidden_state_{}_{}'.format(model_name, task_name)), final_state)
-    np.save(os.path.join(save_path, 'label_{}_{}'.format(model_name, task_name)), label)
-
-
-def hyperparameter_search(event_list, time_window):
-    # 定义max sequence length为10为，3月心功能2级和1年心功能2级作为不同时间窗口的代表性事件，以Hawkes RNN Fuse为样本
-    # 以贝叶斯优化的方式，0进行超参数搜索
-    # 根据Cell Selection的结果，使用GRU作为Cell
-    # 此处的贝叶斯策略仅仅是做toy用，具体测试结果仅做参考
-    def tunning_wrapper(x):
-        dae_weight = x[0][0]
-        keep_rate_input = x[0][1]
-        keep_rate_hidden = x[0][2]
-        autoencoder = x[0][3]
-        num_hidden = x[0][4]
-        learning_rate = x[0][5]
-        batch_size = x[0][6]
-        config = set_hyperparameter(time_window=time_window, batch_size=batch_size, event_list=event_list,
-                                    max_sequence_length=max_sequence_length, learning_rate=learning_rate,
-                                    num_hidden=num_hidden, keep_rate_input=keep_rate_input,
-                                    keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight,
-                                    test_case='hyperparameter_search')
-        model = 'fused_hawkes_rnn_autoencoder_true'
-        new_graph = tf.Graph()
-        with new_graph.as_default():
-            mean_auc = fused_hawkes_rnn_test(config, cell_type='gru', autoencoder=autoencoder, model=model)
-        return [[mean_auc]]
-
-    max_sequence_length = 10
-    bounds = [{'name': 'dae_weight', 'type': 'continuous', 'domain': (10**-1, 1)},
-              {'name': 'keep_rate_input', 'type': 'continuous', 'domain': (0.8, 1)},
-              {'name': 'keep_rate_hidden', 'type': 'continuous', 'domain': (0.8, 1)},
-              {'name': 'autoencoder', 'type': 'discrete', 'domain': [i for i in range(16, 129)]},
-              {'name': 'num_hidden', 'type': 'discrete', 'domain': [i for i in range(16, 129)]},
-              {'name': 'learning_rate', 'type': 'continuous', 'domain': (0.0001, 0.1)},
-              {'name': 'batch_size', 'type': 'discrete', 'domain': [i for i in range(64, 512)]}]
-
-    opt_object = GPyOpt.methods.BayesianOptimization(tunning_wrapper, bounds, initial_design_numdata=1)
-
-    opt_object.run_optimization()
-    print('iter {}, optimum fx: {}, optimum x: {}'.format(0, opt_object.fx_opt, opt_object.x_opt))
-
-
-def cell_search(cell_type):
-    # 以随机搜索方式，用fuse hawkes rnn在3次入院长度，一年心功能2期这个任务让运行10次
-    # 每次进行超参数设计后都让LSTM和GRU各跑一次，综合比较，选择模型
-    time_window_list = ['三月', '一年']
-    test_case = 'cell_search'
-    for item in time_window_list:
-        if item == '一年':
-            max_sequence_length = 10
-            batch_size = 512
-            learning_rate = 0.001
-            num_hidden = 64
-            autoencoder = 16
-            keep_rate_hidden = 1
-            keep_rate_input = 0.8
-            dae_weight = 0.15
-        elif item == '三月':
-            max_sequence_length = 10
-            batch_size = 128
-            learning_rate = 0.008
-            num_hidden = 64
-            autoencoder = 32
-            keep_rate_hidden = 1
-            keep_rate_input = 0.8
-            dae_weight = 0.15
-        else:
-            raise ValueError('')
-
-        config = set_hyperparameter(time_window=item, batch_size=batch_size, test_case=test_case,
-                                    max_sequence_length=max_sequence_length, learning_rate=learning_rate,
-                                    num_hidden=num_hidden, keep_rate_input=keep_rate_input,
-                                    keep_rate_hidden=keep_rate_hidden, dae_weight=dae_weight)
-        new_graph = tf.Graph()
-        with new_graph.as_default():
-            model = 'fused_hawkes_rnn'
-            fused_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
-        new_graph = tf.Graph()
-        with new_graph.as_default():
-            model = 'concat_hawkes_rnn'
-            concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model)
+            for task in config['event_list']:
+                # config = set_hyperparameter(full_event_test=True, time_window=item)
+                if test_model == 0:
+                    model = 'fused_hawkes_rnn_autoencoder_true'
+                    new_graph = tf.Graph()
+                    with new_graph.as_default():
+                        with tf.device('/device:GPU:0'):
+                            fused_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
+                                                  task=task)
+                elif test_model == 1:
+                    new_graph = tf.Graph()
+                    model = 'fused_hawkes_rnn_autoencoder_false'
+                    with new_graph.as_default():
+                        with tf.device('/device:GPU:0'):
+                            fused_hawkes_rnn_test(config, cell_type=cell_type,  autoencoder=-1, model=model, task=task)
+                elif test_model == 4:
+                    new_graph = tf.Graph()
+                    model = 'concat_hawkes_rnn_autoencoder_true'
+                    with new_graph.as_default():
+                        with tf.device('/device:GPU:0'):
+                            concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=autoencoder, model=model,
+                                                   task=task)
+                elif test_model == 5:
+                    new_graph = tf.Graph()
+                    model = 'concat_hawkes_rnn_autoencoder_false'
+                    with new_graph.as_default():
+                        with tf.device('/device:GPU:0'):
+                            concat_hawkes_rnn_test(config, cell_type=cell_type, autoencoder=-1, model=model,
+                                                   task=task)
+                else:
+                    raise ValueError('invalid test model')
 
 
 if __name__ == '__main__':
     # cell_search('lstm')
     # hyperparameter_search(event_list=['心功能2级'], time_window='三月')
-    performance_test(data_length=10, test_model=5, event_list=None, test_case='performance_test')
-    length_test(test_model=4, event_list=None, length_list=[1, 2])
+    performance_test(data_length=10, test_model=0, event_list=None, test_case='performance_test')
     # data_fraction_test(test_model=5, event_list=None)
     print('complete')
